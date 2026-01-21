@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { 
     ShoppingCart, 
     Bed, 
@@ -27,7 +27,8 @@ const dashboardModules = [
         description: 'Quick billing and payment processing for oxygen therapy sessions',
         icon: ShoppingCart,
         color: 'bg-gradient-to-br from-green-400 to-green-600',
-        textColor: 'text-white'
+        textColor: 'text-white',
+        href: '#'
     },
     {
         id: 'bed-management',
@@ -35,7 +36,8 @@ const dashboardModules = [
         description: 'Monitor and manage oxygen therapy bed availability and status',
         icon: Bed,
         color: 'bg-gradient-to-br from-teal-400 to-teal-600',
-        textColor: 'text-white'
+        textColor: 'text-white',
+        href: '#'
     },
     {
         id: 'package-management',
@@ -43,7 +45,8 @@ const dashboardModules = [
         description: 'Create and manage therapy packages with pricing',
         icon: Package,
         color: 'bg-gradient-to-br from-blue-400 to-blue-600',
-        textColor: 'text-white'
+        textColor: 'text-white',
+        href: '#'
     },
     {
         id: 'customer-management',
@@ -51,7 +54,8 @@ const dashboardModules = [
         description: 'Manage customer information and therapy history',
         icon: Users,
         color: 'bg-gradient-to-br from-indigo-400 to-indigo-600',
-        textColor: 'text-white'
+        textColor: 'text-white',
+        href: '/customers'
     },
     {
         id: 'payment-history',
@@ -59,7 +63,8 @@ const dashboardModules = [
         description: 'Track and manage all payment transactions',
         icon: CreditCard,
         color: 'bg-gradient-to-br from-purple-400 to-purple-600',
-        textColor: 'text-white'
+        textColor: 'text-white',
+        href: '#'
     },
     {
         id: 'reports',
@@ -67,7 +72,8 @@ const dashboardModules = [
         description: 'Generate comprehensive business reports and analytics',
         icon: BarChart3,
         color: 'bg-gradient-to-br from-pink-400 to-pink-600',
-        textColor: 'text-white'
+        textColor: 'text-white',
+        href: '#'
     }
 ];
 
@@ -80,9 +86,8 @@ export default function Dashboard({ user }: DashboardProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {dashboardModules.map((module) => {
                     const IconComponent = module.icon;
-                    return (
+                    const ModuleCard = (
                         <div
-                            key={module.id}
                             className={`${module.color} rounded-2xl p-6 cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-xl group relative overflow-hidden`}
                         >
                             {/* Background decoration */}
@@ -111,6 +116,18 @@ export default function Dashboard({ user }: DashboardProps) {
 
                             {/* Hover effect overlay */}
                             <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl"></div>
+                        </div>
+                    );
+                    
+                    return (
+                        <div key={module.id}>
+                            {module.href === '#' ? (
+                                ModuleCard
+                            ) : (
+                                <Link href={module.href}>
+                                    {ModuleCard}
+                                </Link>
+                            )}
                         </div>
                     );
                 })}
