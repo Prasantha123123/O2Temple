@@ -22,6 +22,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role_id',
     ];
 
     /**
@@ -49,4 +50,45 @@ class User extends Authenticatable
             'two_factor_confirmed_at' => 'datetime',
         ];
     }
-}
+
+    /**
+     * Get the role that owns the user.
+     */
+    public function role(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Role::class);
+    }
+
+    /**
+     * Check if user has a specific role
+     */
+    public function hasRole(string $roleName): bool
+    {
+        return $this->role && $this->role->name === $roleName;
+    }
+
+    /**
+     * Check if user is an admin
+     */
+    public function isAdmin(): bool
+    {
+        return $this->hasRole('Admin');
+    }
+
+    /**
+     * Check if user is a receptionist
+     */
+    public function isReceptionist(): bool
+    {
+        return $this->hasRole('Receptionist');
+    }
+
+    /**
+     * Check if user is a staff member
+     */
+    public function isStaff(): bool
+    {
+        return $this->hasRole('Staff');
+    }
+    }
+
