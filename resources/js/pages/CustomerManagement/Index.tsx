@@ -9,6 +9,7 @@ import { PlusIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, ArrowLeftIcon, Ch
 import CreateCustomerModal from './Components/CreateCustomerModal';
 import EditCustomerModal from './Components/EditCustomerModal';
 import DeleteCustomerModal from './Components/DeleteCustomerModal';
+import HeaderLayout from '@/layouts/header-layout';
 
 interface Customer {
   id: number;
@@ -62,7 +63,7 @@ const CustomerManagement: React.FC<Props> = ({ customers, filters }) => {
   };
 
   return (
-    <>
+         <HeaderLayout>
       <Head title="Customer Management" />
 
       <div className="min-h-screen bg-gray-50">
@@ -78,11 +79,7 @@ const CustomerManagement: React.FC<Props> = ({ customers, filters }) => {
                 <ArrowLeftIcon className="w-5 h-5 text-gray-600" />
               </Button>
 
-              <img
-                src="/jaanNetworklogo.jpeg"
-                alt="JAAN Network"
-                className="h-8 w-auto object-contain"
-              />
+             
 
               <h1 className="text-xl font-semibold text-gray-900">Customer Management</h1>
             </div>
@@ -262,7 +259,7 @@ const CustomerManagement: React.FC<Props> = ({ customers, filters }) => {
         onOpenChange={setShowDeleteModal}
         customer={editingCustomer}
       />
-    </>
+    </HeaderLayout>
   );
 };
 

@@ -7,6 +7,7 @@ import { PlusIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, ArrowLeftIcon } f
 import CreateBedModal from './Components/CreateBedModal';
 import EditBedModal from './Components/EditBedModal';
 import DeleteBedModal from './Components/DeleteBedModal';
+import HeaderLayout from '@/layouts/header-layout';
 
 interface Bed {
   id: number;
@@ -75,7 +76,7 @@ const BedManagement: React.FC<Props> = ({ beds: initialBeds }) => {
   };
 
   return (
-    <>
+    <HeaderLayout>
       <Head title="Bed Management" />
 
       <div className="min-h-screen bg-gray-50">
@@ -91,11 +92,6 @@ const BedManagement: React.FC<Props> = ({ beds: initialBeds }) => {
                 <ArrowLeftIcon className="w-5 h-5 text-gray-600" />
               </Button>
 
-              <img
-                src="/jaanNetworklogo.jpeg"
-                alt="JAAN Network"
-                className="h-8 w-auto object-contain"
-              />
 
               <h1 className="text-xl font-semibold text-gray-900">Bed Management</h1>
             </div>
@@ -216,7 +212,7 @@ const BedManagement: React.FC<Props> = ({ beds: initialBeds }) => {
         bed={editingBed}
         onSuccess={handleDeleteSuccess}
       />
-    </>
+    </HeaderLayout>
   );
 };
 

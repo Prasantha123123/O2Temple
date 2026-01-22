@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
 import { Link } from '@inertiajs/react';
 import { User, LogOut } from 'lucide-react';
 
@@ -21,11 +21,7 @@ export default function HeaderLayout({ children, user }: HeaderLayoutProps) {
                         {/* Logo Section */}
                         <div className="flex items-center space-x-4">
                             <div>
-                                <img 
-                                    src="/jaanNetworklogo.jpeg" 
-                                    alt="JAAN Network" 
-                                    className="h-12 w-auto"
-                                />
+                                <img src="/jaanNetworklogo.jpeg" alt="JAAN Network" className="h-12 w-auto" />
                             </div>
                             <div>
                                 <h1 className="text-lg font-semibold text-gray-700">Admin Dashboard</h1>
@@ -40,7 +36,7 @@ export default function HeaderLayout({ children, user }: HeaderLayoutProps) {
                                     {user?.role || 'Admin'}
                                 </div>
                             </div>
-                            
+
                             <div className="flex items-center space-x-2">
                                 <span className="text-sm text-gray-600">Logged As:</span>
                                 <span className="font-medium text-gray-800">{user?.name || 'Admin User'}</span>
@@ -50,11 +46,7 @@ export default function HeaderLayout({ children, user }: HeaderLayoutProps) {
                                 <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
                                     <User className="w-4 h-4 text-gray-600" />
                                 </div>
-                                <Link 
-                                    href="/logout" 
-                                    method="post"
-                                    className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                >
+                                <Link href="/logout" method="post" className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors">
                                     <LogOut className="w-4 h-4 text-gray-600" />
                                 </Link>
                             </div>
@@ -64,9 +56,7 @@ export default function HeaderLayout({ children, user }: HeaderLayoutProps) {
             </header>
 
             {/* Main Content */}
-            <main className="mx-auto px-6 py-8">
-                {children}
-            </main>
+            <main className="mx-auto px-6 py-8">{children}</main>
         </div>
     );
 }
