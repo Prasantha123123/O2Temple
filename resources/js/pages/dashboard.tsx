@@ -46,7 +46,7 @@ const dashboardModules = [
         icon: Package,
         color: 'bg-gradient-to-br from-blue-400 to-blue-600',
         textColor: 'text-white',
-        href: '#'
+        href: '/packages'
     },
     {
         id: 'customer-management',

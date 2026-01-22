@@ -79,14 +79,12 @@ const CustomerManagement: React.FC<Props> = ({ customers, filters }) => {
                 <ArrowLeftIcon className="w-5 h-5 text-gray-600" />
               </Button>
 
-             
+
 
               <h1 className="text-xl font-semibold text-gray-900">Customer Management</h1>
             </div>
 
-            <div className="px-3 py-1.5 bg-teal-500 text-white rounded-lg text-sm font-medium">
-              Customers
-            </div>
+          
           </div>
 
           <div className="bg-white rounded-lg shadow-sm">
