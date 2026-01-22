@@ -145,14 +145,9 @@ const CustomerManagement: React.FC<Props> = ({ customers, filters }) => {
                   <div className="text-sm text-gray-500 font-medium">
                     {customers.meta ? (customers.meta.current_page - 1) * customers.meta.per_page + index + 1 : index + 1}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
-                      <span className="text-teal-600 font-medium text-sm">
-                        {customer.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <span className="font-medium text-gray-900">{customer.name}</span>
-                  </div>
+
+
+                  <div className="text-gray-700">{customer.name}</div>
                   <div className="text-gray-700">{customer.phone}</div>
                   <div className="text-gray-700">{customer.email || 'None'}</div>
                   <div className="text-gray-700">{new Date(customer.created_at).toLocaleDateString()}</div>

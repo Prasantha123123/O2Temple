@@ -37,7 +37,7 @@ const dashboardModules = [
         icon: Bed,
         color: 'bg-gradient-to-br from-teal-400 to-teal-600',
         textColor: 'text-white',
-        href: '#'
+        href: '/beds'
     },
     {
         id: 'package-management',

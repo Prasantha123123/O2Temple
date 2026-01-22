@@ -15,13 +15,12 @@ class BedManagementController extends Controller
         return Inertia::render('BedManagement/Index', compact('beds'));
     }
 
-    public function create()
-    {
-        return Inertia::render('BedManagement/Create');
-    }
+
 
     public function store(Request $request)
     {
+
+
         $data = $request->validate([
             'bed_number' => 'required|string|max:255',
             'status' => 'required|string|in:available,occupied,maintenance',
@@ -29,18 +28,12 @@ class BedManagementController extends Controller
 
         Bed::create($data);
 
-        return redirect()->route('BedManagement.index');
+        return redirect()->route('beds.index');
     }
 
-    public function show(Bed $bed)
-    {
-        return Inertia::render('BedManagement/Show', compact('bed'));
-    }
 
-    public function edit(Bed $bed)
-    {
-        return Inertia::render('BedManagement/Edit', compact('bed'));
-    }
+
+
 
     public function update(Request $request, Bed $bed)
     {
@@ -51,13 +44,13 @@ class BedManagementController extends Controller
 
         $bed->update($data);
 
-        return redirect()->route('BedManagement.index');
+        return redirect()->route('beds.index');
     }
 
     public function destroy(Bed $bed)
     {
         $bed->delete();
 
-        return redirect()->route('BedManagement.index');
+        return redirect()->route('beds.index');
     }
 }

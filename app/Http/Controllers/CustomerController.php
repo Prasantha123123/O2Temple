@@ -103,7 +103,7 @@ class CustomerController extends Controller
     public function show(Customer $customer)
     {
         $customer->load('allocations.bed', 'allocations.package');
-        
+
         return Inertia::render('CustomerManagement/Show', [
             'customer' => $customer,
         ]);
