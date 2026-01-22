@@ -5,6 +5,7 @@ use Inertia\Inertia;
 use Laravel\Fortify\Features;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\BedManagementController;
+use App\Http\Controllers\PackageController;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -48,6 +49,7 @@ Route::middleware(['auth', 'verified', 'role:Staff'])->prefix('staff')->group(fu
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('customers', CustomerController::class)->except(['create', 'edit']);
     Route::resource('beds', BedManagementController::class);
+    Route::resource('packages', PackageController::class);
 });
 
 require __DIR__.'/settings.php';
