@@ -7,6 +7,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\BedManagementController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\POSController;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -54,6 +55,37 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('bookings/available-slots', [\App\Http\Controllers\BookingController::class, 'getAvailableSlots'])->name('bookings.available-slots');
     Route::patch('bookings/{booking}/status', [\App\Http\Controllers\BookingController::class, 'updateStatus'])->name('bookings.update-status');
     Route::delete('bookings/{booking}', [\App\Http\Controllers\BookingController::class, 'destroy'])->name('bookings.destroy');
+});
+
+// POS Billing Routes
+Route::middleware(['auth', 'verified'])->prefix('pos')->group(function () {
+    Route::get('/', [POSController::class, 'index'])->name('pos.index');
+    
+    // Bed Availability
+    Route::get('/beds/availability', [POSController::class, 'getBedAvailability'])->name('pos.beds.availability');
+    Route::get('/beds/live', [POSController::class, 'getLiveBookings'])->name('pos.beds.live');
+    
+    // Booking Search
+    Route::get('/bookings/search', [POSController::class, 'searchBooking'])->name('pos.bookings.search');
+    Route::get('/bookings/{booking}', [POSController::class, 'getBooking'])->name('pos.bookings.show');
+    Route::post('/bookings', [POSController::class, 'createBooking'])->name('pos.bookings.store');
+    
+    // Invoice Management
+    Route::get('/invoices/{invoice}', [POSController::class, 'getInvoice'])->name('pos.invoices.show');
+    Route::post('/invoices', [POSController::class, 'createInvoice'])->name('pos.invoices.store');
+    Route::put('/invoices/{invoice}', [POSController::class, 'updateInvoice'])->name('pos.invoices.update');
+    Route::post('/invoices/{invoice}/items', [POSController::class, 'addInvoiceItem'])->name('pos.invoices.items.store');
+    Route::put('/invoices/{invoice}/items/{item}', [POSController::class, 'updateInvoiceItem'])->name('pos.invoices.items.update');
+    Route::delete('/invoices/{invoice}/items/{item}', [POSController::class, 'removeInvoiceItem'])->name('pos.invoices.items.destroy');
+    Route::post('/invoices/{invoice}/complete', [POSController::class, 'completeInvoice'])->name('pos.invoices.complete');
+    Route::post('/invoices/{invoice}/void', [POSController::class, 'voidInvoice'])->name('pos.invoices.void');
+    Route::get('/invoices/{invoice}/print', [POSController::class, 'printInvoice'])->name('pos.invoices.print');
+    
+    // Payment Processing
+    Route::post('/invoices/{invoice}/payments', [POSController::class, 'processPayment'])->name('pos.invoices.payments');
+    
+    // Quick Customer Creation
+    Route::post('/customers/quick', [POSController::class, 'createQuickCustomer'])->name('pos.customers.quick');
 });
 
 

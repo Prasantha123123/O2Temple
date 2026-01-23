@@ -28,7 +28,7 @@ const dashboardModules = [
         icon: ShoppingCart,
         color: 'bg-gradient-to-br from-green-400 to-green-600',
         textColor: 'text-white',
-        href: '#'
+        href: '/pos'
     },
     {
         id: 'bed-management',
