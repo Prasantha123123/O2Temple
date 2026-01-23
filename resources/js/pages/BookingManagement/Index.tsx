@@ -40,11 +40,28 @@ interface Booking {
   created_at: string;
 }
 
+interface PaginationLink {
+  url: string | null;
+  label: string;
+  active: boolean;
+}
+
 interface Props {
   bookings: {
     data: Booking[];
-    links: any;
-    meta: any;
+    links?: PaginationLink[];
+    meta?: {
+      from?: number;
+      to?: number;
+      total?: number;
+      current_page?: number;
+      last_page?: number;
+    };
+    current_page?: number;
+    from?: number;
+    to?: number;
+    total?: number;
+    last_page?: number;
   };
   filters: {
     search?: string;
@@ -169,19 +186,19 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
                 <form onSubmit={handleSearch} className="flex items-center gap-3">
                   <div className="relative">
                     <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <Input
+                    <input
                       type="text"
                       placeholder="Search bookings..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 w-64 border-gray-300 focus:border-yellow-500 focus:ring-yellow-500"
+                      className="pl-10 w-64 h-10 border border-gray-300 rounded-lg px-3 py-2 focus:border-yellow-500 focus:ring-yellow-500 bg-white text-gray-900"
                     />
                   </div>
 
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="border-gray-300 rounded-lg px-3 py-2 focus:border-yellow-500 focus:ring-yellow-500"
+                    className="border border-gray-300 rounded-lg px-3 py-2 focus:border-yellow-500 focus:ring-yellow-500 bg-white text-gray-900"
                   >
                     <option value="">All Status</option>
                     <option value="confirmed">Confirmed</option>
@@ -190,11 +207,11 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
                     <option value="cancelled">Cancelled</option>
                   </select>
 
-                  <Input
+                  <input
                     type="date"
                     value={dateFilter}
                     onChange={(e) => setDateFilter(e.target.value)}
-                    className="border-gray-300 focus:border-yellow-500 focus:ring-yellow-500"
+                    className="border border-gray-300 rounded-lg px-3 py-2 focus:border-yellow-500 focus:ring-yellow-500 bg-white text-gray-900 [color-scheme:light]"
                   />
 
                   <Button 
@@ -312,10 +329,10 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
             {bookings.data.length > 0 && (
               <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
                 <div className="text-sm text-gray-700">
-                  Showing {bookings.meta.from || 0} to {bookings.meta.to || 0} of {bookings.meta.total || 0} bookings
+                  Showing {bookings.meta?.from || bookings.from || 1} to {bookings.meta?.to || bookings.to || bookings.data.length} of {bookings.meta?.total || bookings.total || bookings.data.length} bookings
                 </div>
                 <div className="flex gap-2">
-                  {bookings.links.map((link: any, index: number) => (
+                  {bookings.links && Array.isArray(bookings.links) && bookings.links.map((link: PaginationLink, index: number) => (
                     <Button
                       key={index}
                       size="sm"
@@ -323,7 +340,7 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
                       onClick={() => link.url && router.get(link.url)}
                       disabled={!link.url}
                       dangerouslySetInnerHTML={{ __html: link.label }}
-                      className={link.active ? 'bg-yellow-500 hover:bg-yellow-600' : ''}
+                      className={link.active ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : 'bg-white text-gray-700 border-gray-300'}
                     />
                   ))}
                 </div>

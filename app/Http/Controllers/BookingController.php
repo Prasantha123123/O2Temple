@@ -53,7 +53,8 @@ class BookingController extends Controller
      */
     public function create()
     {
-        $beds = Bed::where('status', 'available')->get();
+        // Get all beds that are not under maintenance
+        $beds = Bed::where('status', '!=', 'maintenance')->get();
         $packages = Package::orderBy('duration_minutes')->get();
         $customers = Customer::orderBy('name')->get();
 

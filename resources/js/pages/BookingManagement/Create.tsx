@@ -163,22 +163,22 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left Column - Booking Details */}
               <div className="lg:col-span-2 space-y-6">
-                <Card>
+                <Card className="bg-white border-gray-200">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-gray-900">
                       <UserIcon className="w-5 h-5 text-yellow-600" />
                       Customer Information
                     </CardTitle>
-                    <CardDescription>Select the customer for this booking</CardDescription>
+                    <CardDescription className="text-gray-500">Select the customer for this booking</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div>
-                      <Label htmlFor="customer_id">Customer *</Label>
+                      <Label htmlFor="customer_id" className="text-gray-700">Customer *</Label>
                       <select
                         id="customer_id"
                         value={data.customer_id}
                         onChange={(e) => setData('customer_id', e.target.value)}
-                        className="w-full mt-1 border-gray-300 rounded-lg px-3 py-2 focus:border-yellow-500 focus:ring-yellow-500"
+                        className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 focus:border-yellow-500 focus:ring-yellow-500 bg-white text-gray-900"
                         required
                       >
                         <option value="">Select a customer</option>
@@ -199,17 +199,17 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="bg-white border-gray-200">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-gray-900">
                       <RectangleStackIcon className="w-5 h-5 text-teal-600" />
                       Bed Selection
                     </CardTitle>
-                    <CardDescription>Choose an available bed</CardDescription>
+                    <CardDescription className="text-gray-500">Choose an available bed</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div>
-                      <Label htmlFor="bed_id">Bed *</Label>
+                      <Label htmlFor="bed_id" className="text-gray-700">Bed *</Label>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-2">
                         {beds.map((bed) => (
                           <button
@@ -219,7 +219,7 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                             className={`p-3 border-2 rounded-lg text-center transition-all ${
                               data.bed_id === bed.id.toString()
                                 ? 'border-yellow-500 bg-yellow-50 text-yellow-700'
-                                : 'border-gray-200 hover:border-yellow-300'
+                                : 'border-gray-200 bg-white text-gray-900 hover:border-yellow-300'
                             }`}
                           >
                             <div className="font-mono text-sm font-medium">{bed.bed_number}</div>
@@ -233,17 +233,17 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="bg-white border-gray-200">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-gray-900">
                       <CalendarIcon className="w-5 h-5 text-indigo-600" />
                       Package & Date
                     </CardTitle>
-                    <CardDescription>Select package and booking date</CardDescription>
+                    <CardDescription className="text-gray-500">Select package and booking date</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <Label htmlFor="package_id">Package *</Label>
+                      <Label htmlFor="package_id" className="text-gray-700">Package *</Label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                         {packages.map((pkg) => (
                           <button
@@ -253,7 +253,7 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                             className={`p-4 border-2 rounded-lg text-left transition-all ${
                               data.package_id === pkg.id.toString()
                                 ? 'border-yellow-500 bg-yellow-50'
-                                : 'border-gray-200 hover:border-yellow-300'
+                                : 'border-gray-200 bg-white hover:border-yellow-300'
                             }`}
                           >
                             <div className="font-medium text-gray-900">{pkg.name}</div>
@@ -272,14 +272,14 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                     </div>
 
                     <div>
-                      <Label htmlFor="booking_date">Booking Date *</Label>
-                      <Input
+                      <Label htmlFor="booking_date" className="text-gray-700">Booking Date *</Label>
+                      <input
                         id="booking_date"
                         type="date"
                         min={getTodayDate()}
                         value={selectedDate}
                         onChange={(e) => handleDateChange(e.target.value)}
-                        className="mt-1 focus:border-yellow-500 focus:ring-yellow-500"
+                        className="mt-1 w-full h-10 px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 focus:outline-none cursor-pointer [color-scheme:light]"
                         required
                       />
                     </div>
@@ -289,13 +289,13 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
 
               {/* Right Column - Available Time Slots */}
               <div className="lg:col-span-1">
-                <Card className="sticky top-6">
+                <Card className="sticky top-6 bg-white border-gray-200">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-gray-900">
                       <ClockIcon className="w-5 h-5 text-blue-600" />
                       Available Time Slots
                     </CardTitle>
-                    <CardDescription>
+                    <CardDescription className="text-gray-500">
                       {data.bed_id && data.package_id && selectedDate
                         ? 'Select a time slot'
                         : 'Please select bed, package, and date first'}
@@ -316,7 +316,7 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                             className={`w-full p-3 border-2 rounded-lg text-left transition-all ${
                               data.start_time === slot.start_time
                                 ? 'border-yellow-500 bg-yellow-50 text-yellow-700'
-                                : 'border-gray-200 hover:border-yellow-300'
+                                : 'border-gray-200 bg-white text-gray-900 hover:border-yellow-300'
                             }`}
                           >
                             <div className="font-medium">{slot.display_time}</div>
