@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureTimezone();
     }
 
     protected function configureDefaults(): void
@@ -43,5 +45,16 @@ class AppServiceProvider extends ServiceProvider
                 ->uncompromised()
             : null
         );
+    }
+
+    /**
+     * Configure timezone for Sri Lanka (GMT+5:30)
+     * Ensures all Carbon instances use the correct timezone
+     */
+    protected function configureTimezone(): void
+    {
+        // Set default timezone for Carbon
+        Carbon::setLocale('en');
+        date_default_timezone_set('Asia/Colombo');
     }
 }

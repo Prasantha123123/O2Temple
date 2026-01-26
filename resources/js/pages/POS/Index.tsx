@@ -5,6 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { 
+  formatTimeString, 
+  formatTimeRange, 
+  formatDisplayDate, 
+  getCurrentSriLankaTimeString, 
+  getCurrentSriLankaDateString 
+} from '@/utils/time';
+import { 
   Dialog,
   DialogContent,
   DialogHeader,
@@ -65,6 +72,8 @@ interface BedAllocation {
   start_time: string;
   end_time: string;
   time_remaining: string;
+  payment_status?: string;
+  status?: string;
 }
 
 interface Bed {
@@ -82,12 +91,14 @@ interface Booking {
   id: number;
   booking_number: string;
   customer: Customer;
-  bed: { id: number; bed_number: string };
+  bed: { id: number; bed_number: string; display_name?: string };
   package: Package;
   start_time: string;
   end_time: string;
   status: string;
   payment_status: string;
+  total_amount?: number;
+  final_amount?: number;
 }
 
 interface InvoiceItem {
@@ -137,6 +148,7 @@ interface Props {
   customers: Customer[];
   activeInvoice?: Invoice | null;
   selectedBedId?: number | null;
+  loadedBooking?: Booking | null;
 }
 
 const POSBilling: React.FC<Props> = ({ 
@@ -145,6 +157,7 @@ const POSBilling: React.FC<Props> = ({
   customers: initialCustomers,
   activeInvoice: initialInvoice,
   selectedBedId: initialSelectedBedId,
+  loadedBooking,
 }) => {
   // State
   const [beds, setBeds] = useState<Bed[]>(initialBeds);
@@ -164,12 +177,12 @@ const POSBilling: React.FC<Props> = ({
   // Customer form
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
   
-  // Booking form
+  // Booking form - use Sri Lanka time
   const [bookingForm, setBookingForm] = useState({
     customer_id: '',
     package_id: '',
-    start_time: new Date().toTimeString().slice(0, 5),
-    date: new Date().toISOString().split('T')[0],
+    start_time: getCurrentSriLankaTimeString(),
+    date: getCurrentSriLankaDateString(),
   });
   
   // Payment form
@@ -211,12 +224,26 @@ const POSBilling: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [bookingSearchQuery, handleBookingSearch]);
 
+  // Auto-load booking if navigating from Booking Management
+  useEffect(() => {
+    if (loadedBooking && !invoice) {
+      // Auto-select the booking for billing
+      handleSelectBooking(loadedBooking);
+    }
+  }, [loadedBooking]); // Only run once when component mounts with loadedBooking
+
   // Select booking from search
   const handleSelectBooking = async (booking: Booking) => {
     setShowBookingSearch(false);
     setBookingSearchQuery('');
     setSearchResults([]);
     setSelectedCustomer(booking.customer);
+    
+    // Find and select the bed
+    const bed = beds.find(b => b.id === booking.bed.id);
+    if (bed) {
+      setSelectedBed(bed);
+    }
     
     // Create/load invoice for this booking
     try {
@@ -456,12 +483,47 @@ const POSBilling: React.FC<Props> = ({
   };
 
   // Handle bed click
-  const handleBedClick = (bed: Bed) => {
+  const handleBedClick = async (bed: Bed) => {
     if (bed.status === 'maintenance') return;
     
-    // Prevent clicking on occupied beds
-    if (bed.status === 'occupied' || bed.status === 'booked_soon') {
-      alert('This bed is currently unavailable. Please select an available bed.');
+    // If bed has a pending (unpaid) allocation, allow clicking to bill it
+    if (bed.status === 'booked_soon' && bed.current_allocation && bed.current_allocation.payment_status === 'pending') {
+      // Load the booking into billing
+      try {
+        const response = await axios.post('/pos/invoices', {
+          allocation_id: bed.current_allocation.id,
+          invoice_type: 'booking',
+          customer_id: bed.current_allocation.customer?.id,
+        });
+        setInvoice(response.data.invoice);
+        
+        // Set customer
+        if (bed.current_allocation.customer) {
+          setSelectedCustomer({
+            id: bed.current_allocation.customer.id,
+            name: bed.current_allocation.customer.name,
+            phone: bed.current_allocation.customer.phone,
+          });
+        }
+        
+        setSelectedBed(bed);
+        return;
+      } catch (error) {
+        console.error('Error loading booking:', error);
+        alert('Failed to load booking for billing');
+        return;
+      }
+    }
+    
+    // Prevent clicking on occupied beds (paid and in use)
+    if (bed.status === 'occupied') {
+      alert('This bed is currently occupied by a paid booking.');
+      return;
+    }
+    
+    // Prevent clicking on booked_soon beds with paid bookings
+    if (bed.status === 'booked_soon' && bed.current_allocation?.payment_status === 'paid') {
+      alert('This bed has an upcoming paid booking.');
       return;
     }
     
@@ -475,11 +537,12 @@ const POSBilling: React.FC<Props> = ({
       }
       
       // Open booking modal to create a new booking with pre-selected package
+      // Use Sri Lanka time for consistency
       setBookingForm({
         customer_id: '',
         package_id: selectedPackageForBooking.id.toString(),
-        start_time: new Date().toTimeString().slice(0, 5),
-        date: new Date().toISOString().split('T')[0],
+        start_time: getCurrentSriLankaTimeString(),
+        date: getCurrentSriLankaDateString(),
       });
       setShowBookingModal(true);
     }
@@ -488,7 +551,6 @@ const POSBilling: React.FC<Props> = ({
   // Handle package selection for booking
   const handlePackageSelectForBooking = (pkg: Package) => {
     setSelectedPackageForBooking(pkg);
-    setActiveCategory('packages'); // Keep packages tab active
   };
 
   // Create booking from modal
@@ -696,53 +758,76 @@ const POSBilling: React.FC<Props> = ({
                       Occupied
                     </span>
                     <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded-full bg-orange-500"></span>
+                      Pending Pay
+                    </span>
+                    <span className="flex items-center gap-1">
                       <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
-                      Soon
+                      Upcoming
                     </span>
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-6 gap-2">
-                  {beds.map((bed) => (
-                    <button
-                      key={bed.id}
-                      onClick={() => handleBedClick(bed)}
-                      disabled={bed.status === 'maintenance' || bed.status === 'occupied' || bed.status === 'booked_soon'}
-                      className={`
-                        relative p-3 rounded-lg border-2 text-center transition-all
-                        ${selectedBed?.id === bed.id 
-                          ? 'border-teal-500 ring-2 ring-teal-200' 
-                          : 'border-transparent'
-                        }
-                        ${bed.status === 'available' 
-                          ? 'bg-green-100 hover:bg-green-200 text-green-800 cursor-pointer' 
-                          : bed.status === 'occupied'
-                            ? 'bg-red-100 text-red-800 cursor-not-allowed opacity-75'
-                            : bed.status === 'booked_soon'
-                              ? 'bg-yellow-100 text-yellow-800 cursor-not-allowed opacity-75'
-                              : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                        }
-                      `}
-                    >
-                      <div className="font-bold text-sm">{bed.bed_number}</div>
-                      {bed.current_allocation && (
-                        <div className="text-[10px] mt-1 truncate" title={bed.current_allocation.customer?.name}>
-                          {bed.current_allocation.time_remaining}
-                        </div>
-                      )}
-                      {/* Status Badge */}
-                      {bed.status === 'occupied' && (
-                        <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] px-1 py-0.5 rounded-full font-bold">
-                          BUSY
-                        </div>
-                      )}
-                      {bed.status === 'available' && (
-                        <div className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] px-1 py-0.5 rounded-full font-bold">
-                          FREE
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                  {beds.map((bed) => {
+                    // Check if this is a pending (unpaid) booking that can be billed
+                    const isPendingBilling = bed.status === 'booked_soon' && 
+                      bed.current_allocation && 
+                      bed.current_allocation.payment_status === 'pending';
+                    
+                    return (
+                      <button
+                        key={bed.id}
+                        onClick={() => handleBedClick(bed)}
+                        disabled={bed.status === 'maintenance' || (bed.status === 'occupied')}
+                        className={`
+                          relative p-3 rounded-lg border-2 text-center transition-all
+                          ${selectedBed?.id === bed.id 
+                            ? 'border-teal-500 ring-2 ring-teal-200' 
+                            : 'border-transparent'
+                          }
+                          ${bed.status === 'available' 
+                            ? 'bg-green-100 hover:bg-green-200 text-green-800 cursor-pointer' 
+                            : bed.status === 'occupied'
+                              ? 'bg-red-100 text-red-800 cursor-not-allowed opacity-75'
+                              : bed.status === 'booked_soon'
+                                ? isPendingBilling
+                                  ? 'bg-orange-100 hover:bg-orange-200 text-orange-800 cursor-pointer border-orange-300'
+                                  : 'bg-yellow-100 text-yellow-800 cursor-not-allowed opacity-75'
+                                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          }
+                        `}
+                      >
+                        <div className="font-bold text-sm">{bed.bed_number}</div>
+                        {bed.current_allocation && (
+                          <div className="text-[10px] mt-1 truncate" title={bed.current_allocation.customer?.name}>
+                            {isPendingBilling ? bed.current_allocation.customer?.name : bed.current_allocation.time_remaining}
+                          </div>
+                        )}
+                        {/* Status Badge */}
+                        {bed.status === 'occupied' && (
+                          <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] px-1 py-0.5 rounded-full font-bold">
+                            BUSY
+                          </div>
+                        )}
+                        {bed.status === 'available' && (
+                          <div className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] px-1 py-0.5 rounded-full font-bold">
+                            FREE
+                          </div>
+                        )}
+                        {isPendingBilling && (
+                          <div className="absolute -top-1 -right-1 bg-orange-500 text-white text-[8px] px-1 py-0.5 rounded-full font-bold animate-pulse">
+                            PAY
+                          </div>
+                        )}
+                        {bed.status === 'booked_soon' && !isPendingBilling && bed.current_allocation && (
+                          <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-[8px] px-1 py-0.5 rounded-full font-bold">
+                            SOON
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Selected Bed Info */}
@@ -1340,45 +1425,102 @@ const POSBilling: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Booking Search Modal */}
+      {/* Booking Search Modal - Enhanced for booking-to-billing workflow */}
       <Dialog open={showBookingSearch} onOpenChange={setShowBookingSearch}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Find Existing Booking</DialogTitle>
-            <DialogDescription>Search for an existing booking by booking number, customer name, or phone number.</DialogDescription>
+            <DialogTitle>Find Booking for Billing</DialogTitle>
+            <DialogDescription>
+              Search for a booking by booking number, customer name, or phone number.
+              <span className="block mt-1 text-teal-600 font-medium">
+                Pending (unpaid) bookings are shown first for quick billing.
+              </span>
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="relative">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <Input
-                placeholder="Search by booking number, name or phone..."
+                placeholder="Search by booking number, customer name or phone..."
                 value={bookingSearchQuery}
                 onChange={(e) => setBookingSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 text-lg"
                 autoFocus
               />
             </div>
-            <div className="max-h-[300px] overflow-y-auto space-y-2">
+            <div className="max-h-[400px] overflow-y-auto space-y-3">
               {searchResults.length === 0 && bookingSearchQuery.length >= 2 && (
-                <p className="text-center text-gray-500 py-4">No bookings found</p>
+                <p className="text-center text-gray-500 py-8">No bookings found matching your search</p>
+              )}
+              {bookingSearchQuery.length < 2 && (
+                <p className="text-center text-gray-400 py-8">Enter at least 2 characters to search</p>
               )}
               {searchResults.map((booking) => (
                 <button
                   key={booking.id}
-                  className="w-full p-3 border rounded-lg text-left hover:bg-gray-50 transition-colors"
+                  className={`w-full p-4 border-2 rounded-lg text-left transition-all ${
+                    booking.payment_status === 'pending' 
+                      ? 'border-orange-300 bg-orange-50 hover:border-orange-500 hover:bg-orange-100' 
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
                   onClick={() => handleSelectBooking(booking)}
                 >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-semibold text-teal-700">{booking.booking_number}</p>
-                      <p className="text-sm text-gray-600">{booking.customer.name} • {booking.customer.phone}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {booking.package.name} • Bed {booking.bed.bed_number}
-                      </p>
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-bold text-lg text-teal-700">{booking.booking_number}</span>
+                        <Badge className={
+                          booking.payment_status === 'pending' 
+                            ? 'bg-orange-500 text-white animate-pulse' 
+                            : 'bg-green-100 text-green-700'
+                        }>
+                          {booking.payment_status === 'pending' ? '💳 AWAITING PAYMENT' : '✓ Paid'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-gray-500">Customer:</span>
+                          <span className="ml-2 font-medium text-gray-900">{booking.customer.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Phone:</span>
+                          <span className="ml-2 text-gray-700">{booking.customer.phone}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Package:</span>
+                          <span className="ml-2 font-medium text-gray-900">{booking.package.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Bed:</span>
+                          <span className="ml-2 font-medium text-teal-600">{booking.bed.bed_number}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Time:</span>
+                          <span className="ml-2 text-gray-700">
+                            {formatTimeRange(booking.start_time, booking.end_time)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Date:</span>
+                          <span className="ml-2 text-gray-700">
+                            {formatDisplayDate(booking.start_time)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <Badge className={booking.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}>
-                      {booking.payment_status}
-                    </Badge>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-teal-600">
+                        {new Intl.NumberFormat('en-LK', { style: 'decimal', minimumFractionDigits: 2 }).format(booking.package.price)} LKR
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {booking.package.duration_minutes} min
+                      </div>
+                      {booking.payment_status === 'pending' && (
+                        <div className="mt-2 px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
+                          Click to Bill
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -1730,7 +1872,7 @@ const POSBilling: React.FC<Props> = ({
                   type="date"
                   value={bookingForm.date}
                   onChange={(e) => setBookingForm({ ...bookingForm, date: e.target.value })}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={getCurrentSriLankaDateString()}
                 />
               </div>
               <div>
@@ -1747,10 +1889,12 @@ const POSBilling: React.FC<Props> = ({
             {selectedPackageForBooking && (
               <div className="p-4 bg-teal-50 border border-teal-200 rounded-lg">
                 {(() => {
-                  // Calculate end time
-                  const startDateTime = new Date(`${bookingForm.date}T${bookingForm.start_time}`);
-                  const endDateTime = new Date(startDateTime.getTime() + selectedPackageForBooking.duration_minutes * 60000);
-                  const endTimeStr = endDateTime.toTimeString().slice(0, 5);
+                  // Calculate end time using simple arithmetic (no timezone conversion)
+                  const [hours, minutes] = bookingForm.start_time.split(':').map(Number);
+                  const totalMinutes = hours * 60 + minutes + selectedPackageForBooking.duration_minutes;
+                  const endHours = Math.floor(totalMinutes / 60) % 24;
+                  const endMinutes = totalMinutes % 60;
+                  const endTimeStr = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
                   
                   return (
                     <div className="space-y-2">

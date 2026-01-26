@@ -10,44 +10,65 @@ use Illuminate\Support\Collection;
 class BedAvailabilityService
 {
     /**
+     * Threshold in minutes before a booking starts to mark bed as "booked_soon"
+     * and block new bookings. Until this threshold, beds remain available.
+     */
+    private const BOOKED_SOON_THRESHOLD = 15;
+
+    /**
      * Get all beds with their current availability status.
+     * 
+     * Status Logic (15-minute pre-booking lock):
+     * - 'occupied': PAID booking where current time is WITHIN start_time and end_time
+     * - 'booked_soon': Booking starting within 15 minutes (locks the bed)
+     * - 'available': No current bookings, or future bookings more than 15 min away
+     * - 'maintenance': Bed is under maintenance
+     * 
+     * NOTE: Beds remain AVAILABLE until 15 minutes before a booking starts.
+     * This allows other customers to use the bed until the lock window.
      */
     public function getAllBedsWithStatus(): Collection
     {
         $now = now();
         
-        // Get all current allocations in one query
-        // Only consider allocations with paid payment status
-        $currentAllocations = BedAllocation::with(['customer', 'package'])
+        // Get PAID allocations CURRENTLY IN PROGRESS (now is between start and end)
+        $currentOccupiedAllocations = BedAllocation::with(['customer', 'package'])
             ->where('start_time', '<=', $now)
-            ->where('end_time', '>=', $now)
+            ->where('end_time', '>', $now)
             ->whereIn('status', ['confirmed', 'in_progress'])
             ->where('payment_status', 'paid')
             ->get()
             ->keyBy('bed_id');
         
-        // Get upcoming allocations in the next 30 minutes
+        // Get allocations starting within 15 minutes (the lock window)
+        // These beds become "booked_soon" and block new bookings
         $upcomingAllocations = BedAllocation::with(['customer', 'package'])
             ->where('start_time', '>', $now)
-            ->where('start_time', '<=', $now->copy()->addMinutes(30))
-            ->whereIn('status', ['confirmed', 'in_progress'])
-            ->where('payment_status', 'paid')
+            ->where('start_time', '<=', $now->copy()->addMinutes(self::BOOKED_SOON_THRESHOLD))
+            ->where('status', '!=', 'cancelled')
             ->get()
             ->keyBy('bed_id');
         
-        return Bed::available()->orderByGrid()->get()->map(function ($bed) use ($currentAllocations, $upcomingAllocations) {
-            $currentAllocation = $currentAllocations->get($bed->id);
+        return Bed::available()->orderByGrid()->get()->map(function ($bed) use ($currentOccupiedAllocations, $upcomingAllocations, $now) {
+            $occupiedAllocation = $currentOccupiedAllocations->get($bed->id);
             $upcomingAllocation = $upcomingAllocations->get($bed->id);
             
-            // Determine status
+            // Status priority: maintenance > occupied > booked_soon (within 15 min) > available
             $status = 'available';
+            $allocation = null;
+            
             if ($bed->status === 'maintenance') {
                 $status = 'maintenance';
-            } elseif ($currentAllocation) {
+            } elseif ($occupiedAllocation) {
+                // Currently occupied - paid and within time window
                 $status = 'occupied';
+                $allocation = $occupiedAllocation;
             } elseif ($upcomingAllocation) {
+                // Booking starting within 15 minutes - lock the bed
                 $status = 'booked_soon';
+                $allocation = $upcomingAllocation;
             }
+            // Note: Future bookings more than 15 min away keep bed as 'available'
             
             return [
                 'id' => $bed->id,
@@ -57,7 +78,7 @@ class BedAvailabilityService
                 'grid_col' => $bed->grid_col,
                 'bed_type' => $bed->bed_type,
                 'status' => $status,
-                'current_allocation' => $currentAllocation,
+                'current_allocation' => $allocation,
             ];
         });
     }
@@ -245,41 +266,50 @@ class BedAvailabilityService
     }
     
     /**
-     * Update the status column in the beds table based on paid allocations.
+     * Update the status column in the beds table based on allocations.
+     * 
+     * Bed status logic (15-minute pre-booking lock):
+     * - 'occupied': PAID booking currently in progress (now between start and end)
+     * - 'booked_soon': Booking starting within 15 minutes (locks the bed)
+     * - 'available': No current bookings, or future bookings more than 15 min away
      */
     public function updateBedTableStatuses(): void
     {
         $now = now();
         
-        // Get all current paid allocations
-        $currentAllocations = BedAllocation::where('start_time', '<=', $now)
-            ->where('end_time', '>=', $now)
+        // Get beds with PAID allocations CURRENTLY IN PROGRESS
+        $currentOccupiedBedIds = BedAllocation::where('start_time', '<=', $now)
+            ->where('end_time', '>', $now)
             ->whereIn('status', ['confirmed', 'in_progress'])
             ->where('payment_status', 'paid')
             ->pluck('bed_id')
             ->unique();
         
-        // Get upcoming paid allocations (within 30 minutes)
-        $upcomingAllocations = BedAllocation::where('start_time', '>', $now)
-            ->where('start_time', '<=', $now->copy()->addMinutes(30))
-            ->whereIn('status', ['confirmed', 'in_progress'])
-            ->where('payment_status', 'paid')
+        // Get beds with bookings starting within 15 minutes (the lock window)
+        $upcomingBedIds = BedAllocation::where('start_time', '>', $now)
+            ->where('start_time', '<=', $now->copy()->addMinutes(self::BOOKED_SOON_THRESHOLD))
+            ->where('status', '!=', 'cancelled')
             ->pluck('bed_id')
             ->unique();
         
         // Update beds to 'occupied' if they have current paid allocations
-        Bed::whereIn('id', $currentAllocations)
-            ->where('status', '!=', 'maintenance')
-            ->update(['status' => 'occupied']);
+        if ($currentOccupiedBedIds->isNotEmpty()) {
+            Bed::whereIn('id', $currentOccupiedBedIds)
+                ->where('status', '!=', 'maintenance')
+                ->update(['status' => 'occupied']);
+        }
         
-        // Update beds to 'booked_soon' if they have upcoming paid allocations (but not currently occupied)
-        Bed::whereIn('id', $upcomingAllocations)
-            ->whereNotIn('id', $currentAllocations)
-            ->where('status', '!=', 'maintenance')
-            ->update(['status' => 'booked_soon']);
+        // Beds for booked_soon: within 15-minute lock window (but not currently occupied)
+        $bookedSoonBedIds = $upcomingBedIds->diff($currentOccupiedBedIds);
         
-        // Update beds to 'available' if they have no current or upcoming paid allocations
-        $busyBedIds = $currentAllocations->merge($upcomingAllocations)->unique();
+        if ($bookedSoonBedIds->isNotEmpty()) {
+            Bed::whereIn('id', $bookedSoonBedIds)
+                ->where('status', '!=', 'maintenance')
+                ->update(['status' => 'booked_soon']);
+        }
+        
+        // All other beds are available (including those with future bookings > 15 min away)
+        $busyBedIds = $currentOccupiedBedIds->merge($upcomingBedIds)->unique();
         Bed::whereNotIn('id', $busyBedIds)
             ->where('status', '!=', 'maintenance')
             ->update(['status' => 'available']);

@@ -119,6 +119,15 @@ class BookingController extends Controller
 
     /**
      * Store a newly created booking.
+     * 
+     * 15-minute pre-booking lock system:
+     * - Bookings can be made for future times
+     * - Until 15 minutes before start time, the bed remains AVAILABLE
+     * - At 15 minutes before, bed becomes "Booked Soon" and blocks new bookings
+     * 
+     * Validation rules:
+     * 1. Check if requested time overlaps with any existing booking
+     * 2. Check if bed is within 15-minute lock window of another booking
      */
     public function store(Request $request)
     {
@@ -130,34 +139,62 @@ class BookingController extends Controller
             'end_time' => 'required|date|after:start_time',
         ]);
 
-        // Check for conflicts
-        $hasConflict = BedAllocation::where('bed_id', $validated['bed_id'])
+        $now = now();
+        $requestedStart = Carbon::parse($validated['start_time']);
+        $requestedEnd = Carbon::parse($validated['end_time']);
+        
+        // Check 1: Is there any existing booking that overlaps with the requested time?
+        $hasOverlap = BedAllocation::where('bed_id', $validated['bed_id'])
             ->where('status', '!=', 'cancelled')
-            ->where(function ($query) use ($validated) {
-                $query->whereBetween('start_time', [$validated['start_time'], $validated['end_time']])
-                    ->orWhereBetween('end_time', [$validated['start_time'], $validated['end_time']])
-                    ->orWhere(function ($q) use ($validated) {
-                        $q->where('start_time', '<=', $validated['start_time'])
-                          ->where('end_time', '>=', $validated['end_time']);
-                    });
+            ->where(function ($query) use ($requestedStart, $requestedEnd) {
+                $query->where('start_time', '<', $requestedEnd)
+                      ->where('end_time', '>', $requestedStart);
             })
             ->exists();
 
-        if ($hasConflict) {
-            return back()->withErrors(['error' => 'This time slot is already booked.']);
+        if ($hasOverlap) {
+            return back()->withErrors(['error' => 'This time slot already has a booking for the selected bed. Please choose a different time or bed.']);
+        }
+        
+        // Check 2: Is the bed within 15-minute lock window of another booking?
+        // If a booking starts within 15 minutes, the bed is locked
+        $isInLockWindow = BedAllocation::where('bed_id', $validated['bed_id'])
+            ->where('status', '!=', 'cancelled')
+            ->where('start_time', '>', $now)
+            ->where('start_time', '<=', $now->copy()->addMinutes(15))
+            // Check if our requested time would conflict with this locked period
+            ->where(function ($query) use ($requestedStart, $requestedEnd) {
+                $query->where('start_time', '<', $requestedEnd)
+                      ->where('end_time', '>', $requestedStart);
+            })
+            ->exists();
+            
+        if ($isInLockWindow) {
+            return back()->withErrors(['error' => 'This bed is currently locked for an upcoming booking (within 15 minutes). Please choose a different bed or time.']);
         }
 
+        // Get package for pricing
+        $package = Package::findOrFail($validated['package_id']);
+
+        // Create booking with pending status (no payment yet)
         $booking = BedAllocation::create([
             'customer_id' => $validated['customer_id'],
             'bed_id' => $validated['bed_id'],
             'package_id' => $validated['package_id'],
             'start_time' => $validated['start_time'],
             'end_time' => $validated['end_time'],
-            'status' => 'pending', // Bookings from Booking Management start as pending
-            'payment_status' => 'pending',
+            'status' => 'pending', // Booking without payment starts as pending
+            'payment_status' => 'pending', // No payment yet
+            'total_amount' => $package->price,
+            'final_amount' => $package->price,
+            'created_by' => auth()->id(),
         ]);
 
-        return redirect()->route('bookings.index')->with('success', 'Booking created successfully!');
+        // Update bed status dynamically using the service
+        $bedAvailabilityService = new BedAvailabilityService();
+        $bedAvailabilityService->updateBedTableStatuses();
+
+        return redirect()->route('bookings.index')->with('success', 'Booking created successfully! The bed will be locked 15 minutes before the booking time.');
     }
 
     /**

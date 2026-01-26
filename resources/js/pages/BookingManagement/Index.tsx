@@ -10,6 +10,7 @@ import {
   ArrowLeftIcon,
   CalendarIcon,
   XCircleIcon,
+  CreditCardIcon,
 } from '@heroicons/react/24/outline';
 
 interface Booking {
@@ -286,7 +287,21 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
                           </Button>
                         )}
                       </div>
-                      {getPaymentBadge(booking.payment_status)}
+                      <div className="flex items-center gap-2">
+                        {getPaymentBadge(booking.payment_status)}
+                        {/* Load to POS Billing button for pending payment bookings */}
+                        {booking.payment_status === 'pending' && booking.status !== 'cancelled' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => router.get(`/pos?load_booking=${booking.id}`)}
+                            className="text-teal-600 hover:text-teal-700 hover:bg-teal-50 p-1"
+                            title="Load booking into POS Billing for payment"
+                          >
+                            <CreditCardIcon className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))

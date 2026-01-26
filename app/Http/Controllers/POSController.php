@@ -19,6 +19,7 @@ class POSController extends Controller
 {
     /**
      * Display the POS main interface.
+     * Supports loading a specific booking via ?load_booking=ID parameter
      */
     public function index(Request $request)
     {
@@ -31,6 +32,47 @@ class POSController extends Controller
         // Get active invoice for selected bed if any
         $selectedBedId = $request->get('bed_id');
         $activeInvoice = null;
+        $loadedBooking = null;
+        
+        // Check if we need to load a specific booking (from Booking Management)
+        $loadBookingId = $request->get('load_booking');
+        if ($loadBookingId) {
+            $booking = BedAllocation::with(['customer', 'bed', 'package'])
+                ->where('id', $loadBookingId)
+                ->where('payment_status', 'pending')
+                ->where('status', '!=', 'cancelled')
+                ->first();
+            
+            if ($booking) {
+                $loadedBooking = [
+                    'id' => $booking->id,
+                    'booking_number' => $booking->booking_number,
+                    'customer' => [
+                        'id' => $booking->customer->id,
+                        'name' => $booking->customer->name,
+                        'phone' => $booking->customer->phone,
+                        'email' => $booking->customer->email,
+                    ],
+                    'bed' => [
+                        'id' => $booking->bed->id,
+                        'bed_number' => $booking->bed->bed_number,
+                        'display_name' => $booking->bed->display_name ?? 'Bed ' . $booking->bed->bed_number,
+                    ],
+                    'package' => [
+                        'id' => $booking->package->id,
+                        'name' => $booking->package->name,
+                        'price' => $booking->package->price,
+                        'duration_minutes' => $booking->package->duration_minutes,
+                    ],
+                    'start_time' => $booking->start_time->format('Y-m-d H:i'),
+                    'end_time' => $booking->end_time->format('Y-m-d H:i'),
+                    'status' => $booking->status,
+                    'payment_status' => $booking->payment_status,
+                    'total_amount' => $booking->total_amount ?? $booking->package->price,
+                    'final_amount' => $booking->final_amount ?? $booking->package->price,
+                ];
+            }
+        }
         
         if ($selectedBedId) {
             $activeInvoice = Invoice::where('status', 'draft')
@@ -47,6 +89,7 @@ class POSController extends Controller
             'customers' => $customers,
             'activeInvoice' => $activeInvoice,
             'selectedBedId' => $selectedBedId,
+            'loadedBooking' => $loadedBooking,
         ]);
     }
 
@@ -134,7 +177,8 @@ class POSController extends Controller
     }
 
     /**
-     * Search for a booking by booking number.
+     * Search for a booking by booking number, customer name, or phone.
+     * Prioritizes pending bookings (awaiting payment) for POS billing workflow.
      */
     public function searchBooking(Request $request)
     {
@@ -144,15 +188,20 @@ class POSController extends Controller
             return response()->json(['bookings' => []]);
         }
 
-        $bookings = BedAllocation::where('booking_number', 'like', "%{$query}%")
-            ->orWhereHas('customer', function ($q) use ($query) {
-                $q->where('name', 'like', "%{$query}%")
-                  ->orWhere('phone', 'like', "%{$query}%");
+        $bookings = BedAllocation::where(function ($q) use ($query) {
+                $q->where('booking_number', 'like', "%{$query}%")
+                  ->orWhereHas('customer', function ($cq) use ($query) {
+                      $cq->where('name', 'like', "%{$query}%")
+                        ->orWhere('phone', 'like', "%{$query}%");
+                  });
             })
             ->where('status', '!=', 'cancelled')
+            ->where('end_time', '>=', now()) // Only non-expired bookings
             ->with(['customer', 'bed', 'package'])
+            // Order by: pending (unpaid) first, then by start_time
+            ->orderByRaw("CASE WHEN payment_status = 'pending' THEN 0 ELSE 1 END")
             ->orderBy('start_time', 'desc')
-            ->limit(10)
+            ->limit(15)
             ->get()
             ->map(function ($booking) {
                 return [
@@ -179,6 +228,8 @@ class POSController extends Controller
                     'end_time' => $booking->end_time->format('Y-m-d H:i'),
                     'status' => $booking->status,
                     'payment_status' => $booking->payment_status,
+                    'total_amount' => $booking->total_amount ?? $booking->package->price,
+                    'final_amount' => $booking->final_amount ?? $booking->package->price,
                 ];
             });
 
@@ -210,6 +261,7 @@ class POSController extends Controller
 
     /**
      * Create a new booking with optional invoice.
+     * Checks for ALL existing bookings (not just paid) to prevent double booking.
      */
     public function createBooking(Request $request)
     {
@@ -225,12 +277,13 @@ class POSController extends Controller
         ]);
 
         $package = Package::findOrFail($validated['package_id']);
+        $now = now();
         
         // Use server's current time if start_now is true, otherwise parse the provided time
         if ($request->get('start_now', false)) {
-            $startTime = now();
+            $startTime = $now->copy();
         } else {
-            $startTime = Carbon::parse($validated['start_time'] ?? now());
+            $startTime = Carbon::parse($validated['start_time'] ?? $now);
         }
         
         // Calculate end time from package duration if not provided
@@ -238,18 +291,39 @@ class POSController extends Controller
             ? Carbon::parse($validated['end_time']) 
             : $startTime->copy()->addMinutes($package->duration_minutes);
 
-        // Check for conflicts
-        $hasConflict = BedAllocation::conflictsWith(
-            $validated['bed_id'],
-            $startTime,
-            $endTime
-        )->exists();
+        // Check 1: Is there any existing booking that overlaps with the requested time?
+        $hasOverlap = BedAllocation::where('bed_id', $validated['bed_id'])
+            ->where('status', '!=', 'cancelled')
+            ->where(function ($q) use ($startTime, $endTime) {
+                $q->where('start_time', '<', $endTime)
+                  ->where('end_time', '>', $startTime);
+            })
+            ->exists();
 
-        if ($hasConflict) {
-            return back()->withErrors(['error' => 'This time slot is already booked for the selected bed.']);
+        if ($hasOverlap) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This time slot already has a booking for the selected bed. Please choose a different time or bed.',
+            ], 422);
         }
-
-        $package = Package::findOrFail($validated['package_id']);
+        
+        // Check 2: Is the bed within 15-minute lock window of another booking?
+        $isInLockWindow = BedAllocation::where('bed_id', $validated['bed_id'])
+            ->where('status', '!=', 'cancelled')
+            ->where('start_time', '>', $now)
+            ->where('start_time', '<=', $now->copy()->addMinutes(15))
+            ->where(function ($q) use ($startTime, $endTime) {
+                $q->where('start_time', '<', $endTime)
+                  ->where('end_time', '>', $startTime);
+            })
+            ->exists();
+            
+        if ($isInLockWindow) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This bed is currently locked for an upcoming booking (within 15 minutes). Please choose a different bed.',
+            ], 422);
+        }
 
         DB::beginTransaction();
         try {
@@ -501,6 +575,12 @@ class POSController extends Controller
 
     /**
      * Process payment for invoice.
+     * 
+     * After successful payment:
+     * - Invoice payment_status: pending -> paid (if fully paid)
+     * - BedAllocation payment_status: pending -> paid
+     * - BedAllocation status: pending -> in_progress (or confirmed if not started)
+     * - Bed status: booked_soon -> occupied (if booking time is current)
      */
     public function processPayment(Request $request, Invoice $invoice)
     {
@@ -530,27 +610,39 @@ class POSController extends Controller
             
             \Log::info("Payment processed for invoice #{$invoice->id}, balance: {$invoice->balance_amount}");
 
-            // If fully paid, mark invoice and booking as completed
+            // If fully paid, update invoice, booking, and bed statuses
             if ($invoice->balance_amount <= 0) {
                 $invoice->markAsCompleted(auth()->id());
                 
                 \Log::info("Invoice #{$invoice->id} marked as completed");
 
                 if ($invoice->allocation) {
-                    $allocationId = $invoice->allocation->id;
-                    $bedId = $invoice->allocation->bed_id;
+                    $allocation = $invoice->allocation;
+                    $allocationId = $allocation->id;
+                    $bedId = $allocation->bed_id;
+                    $now = now();
                     
-                    // Update allocation status
-                    $invoice->allocation->update([
+                    // Determine new booking status based on timing
+                    // If booking start_time <= now <= end_time, it's in_progress
+                    // If booking hasn't started yet, it's confirmed (will start later)
+                    $newStatus = 'confirmed';
+                    if ($allocation->start_time <= $now && $allocation->end_time >= $now) {
+                        $newStatus = 'in_progress';
+                    }
+                    
+                    // Update allocation: payment_status pending -> paid, status pending -> in_progress/confirmed
+                    $allocation->update([
                         'payment_status' => 'paid',
-                        'status' => 'in_progress',
+                        'status' => $newStatus,
                     ]);
                     
-                    \Log::info("Allocation #{$allocationId} updated: payment_status=paid, status=in_progress");
-                    \Log::info("Allocation details: start_time={$invoice->allocation->start_time}, end_time={$invoice->allocation->end_time}");
+                    \Log::info("Allocation #{$allocationId} updated: payment_status=paid, status={$newStatus}");
+                    \Log::info("Allocation details: start_time={$allocation->start_time}, end_time={$allocation->end_time}");
                     
-                    // Update bed status in database immediately
-                    $this->updateBedStatus($bedId);
+                    // Update bed status:
+                    // - If booking is current (in_progress), bed becomes 'occupied'
+                    // - If booking is future (confirmed), bed becomes 'booked_soon'
+                    $this->updateBedStatusAfterPayment($bedId, $newStatus);
                 } else {
                     \Log::warning("Invoice #{$invoice->id} has no allocation linked");
                 }
@@ -698,9 +790,11 @@ class POSController extends Controller
                     'package' => $booking->package,
                     'start_time' => $booking->start_time->format('H:i'),
                     'end_time' => $booking->end_time->format('H:i'),
+                    'start_datetime' => $booking->start_time->format('Y-m-d H:i:s'),
+                    'end_datetime' => $booking->end_time->format('Y-m-d H:i:s'),
                     'status' => $status,
                     'payment_status' => $booking->payment_status,
-                    'time_remaining' => $booking->end_time->diffForHumans($now, true),
+                    'time_remaining' => 'Ends: ' . $booking->end_time->format('H:i'),
                     'is_active' => $booking->start_time <= $now && $booking->end_time >= $now,
                 ];
             });
@@ -708,45 +802,73 @@ class POSController extends Controller
         return response()->json([
             'bookings' => $bookings,
             'timestamp' => now()->format('Y-m-d H:i:s'),
+            'timezone' => 'Asia/Colombo',
         ]);
     }
 
     /**
      * Get all beds with their current status.
+     * 
+     * Status Logic (15-minute pre-booking lock):
+     * - 'occupied': PAID booking where current time is WITHIN start_time and end_time
+     * - 'booked_soon': Booking starting within 15 minutes (locks the bed)
+     * - 'available': No current bookings, or future bookings more than 15 min away
+     * - 'maintenance': Bed under maintenance
+     * 
+     * NOTE: Beds remain AVAILABLE until 15 minutes before a booking starts.
      */
     private function getBedsWithStatus()
     {
-        // Get all current allocations in one query to avoid N+1
-        // Only consider allocations with paid payment status
         $now = now();
-        $currentAllocations = BedAllocation::with(['customer', 'package'])
+        $bookedSoonThreshold = 15; // minutes before booking to lock the bed
+        
+        // Get PAID allocations that are CURRENTLY ACTIVE (now is between start and end)
+        $currentOccupiedAllocations = BedAllocation::with(['customer', 'package'])
             ->where('start_time', '<=', $now)
-            ->where('end_time', '>=', $now)
+            ->where('end_time', '>', $now)
             ->whereIn('status', ['confirmed', 'in_progress'])
             ->where('payment_status', 'paid')
             ->get()
             ->keyBy('bed_id');
         
+        // Get allocations starting within 15 minutes (the lock window)
         $upcomingAllocations = BedAllocation::with(['customer', 'package'])
             ->where('start_time', '>', $now)
-            ->where('start_time', '<=', $now->copy()->addMinutes(30))
-            ->whereIn('status', ['confirmed', 'in_progress'])
-            ->where('payment_status', 'paid')
+            ->where('start_time', '<=', $now->copy()->addMinutes($bookedSoonThreshold))
+            ->where('status', '!=', 'cancelled')
             ->get()
             ->keyBy('bed_id');
         
-        return Bed::orderByGrid()->get()->map(function ($bed) use ($currentAllocations, $upcomingAllocations, $now) {
-            $currentAllocation = $currentAllocations->get($bed->id);
+        return Bed::orderByGrid()->get()->map(function ($bed) use ($currentOccupiedAllocations, $upcomingAllocations, $now) {
+            $occupiedAllocation = $currentOccupiedAllocations->get($bed->id);
             $upcomingAllocation = $upcomingAllocations->get($bed->id);
             
-            // Determine status
+            // Determine status priority:
+            // 1. Maintenance (bed out of service)
+            // 2. Occupied (paid booking currently in progress)
+            // 3. Booked Soon (booking starting within 15 minutes)
+            // 4. Available (no bookings in lock window)
             $status = 'available';
+            $allocation = null;
+            
             if ($bed->status === 'maintenance') {
                 $status = 'maintenance';
-            } elseif ($currentAllocation) {
+            } elseif ($occupiedAllocation) {
+                // Currently in use - paid and within time window
                 $status = 'occupied';
+                $allocation = $occupiedAllocation;
             } elseif ($upcomingAllocation) {
+                // Booking starting within 15 minutes - lock the bed
                 $status = 'booked_soon';
+                $allocation = $upcomingAllocation;
+            }
+            // Note: Future bookings more than 15 min away keep bed as 'available'
+            
+            // Calculate time display - ALWAYS use fixed HH:MM format
+            $timeDisplay = '';
+            if ($allocation) {
+                // Always show end time in fixed format
+                $timeDisplay = 'Ends: ' . $allocation->end_time->format('H:i');
             }
             
             return [
@@ -757,21 +879,25 @@ class POSController extends Controller
                 'grid_col' => $bed->grid_col,
                 'bed_type' => $bed->bed_type,
                 'status' => $status,
-                'current_allocation' => $currentAllocation ? [
-                    'id' => $currentAllocation->id,
-                    'booking_number' => $currentAllocation->booking_number,
-                    'customer' => $currentAllocation->customer ? [
-                        'id' => $currentAllocation->customer->id,
-                        'name' => $currentAllocation->customer->name,
-                        'phone' => $currentAllocation->customer->phone,
+                'current_allocation' => $allocation ? [
+                    'id' => $allocation->id,
+                    'booking_number' => $allocation->booking_number,
+                    'customer' => $allocation->customer ? [
+                        'id' => $allocation->customer->id,
+                        'name' => $allocation->customer->name,
+                        'phone' => $allocation->customer->phone,
                     ] : null,
-                    'package' => $currentAllocation->package ? [
-                        'id' => $currentAllocation->package->id,
-                        'name' => $currentAllocation->package->name,
+                    'package' => $allocation->package ? [
+                        'id' => $allocation->package->id,
+                        'name' => $allocation->package->name,
                     ] : null,
-                    'start_time' => $currentAllocation->start_time->format('H:i'),
-                    'end_time' => $currentAllocation->end_time->format('H:i'),
-                    'time_remaining' => $currentAllocation->end_time->diffForHumans($now, ['parts' => 1]),
+                    'start_time' => $allocation->start_time->format('H:i'),
+                    'end_time' => $allocation->end_time->format('H:i'),
+                    'time_remaining' => $timeDisplay,
+                    'start_datetime' => $allocation->start_time->format('Y-m-d H:i:s'),
+                    'end_datetime' => $allocation->end_time->format('Y-m-d H:i:s'),
+                    'payment_status' => $allocation->payment_status,
+                    'status' => $allocation->status,
                 ] : null,
             ];
         });
@@ -779,6 +905,11 @@ class POSController extends Controller
     
     /**
      * Update a single bed's status in the database based on its allocations.
+     * 
+     * Logic (15-minute pre-booking lock):
+     * - 'occupied': PAID booking where NOW is between start_time and end_time
+     * - 'booked_soon': Booking starting within 15 minutes
+     * - 'available': No bookings in lock window
      */
     private function updateBedStatus(int $bedId): void
     {
@@ -788,40 +919,64 @@ class POSController extends Controller
         }
         
         $now = now();
+        $bookedSoonThreshold = 15; // minutes
         
-        // Log for debugging
         \Log::info("updateBedStatus called for bed {$bedId} at {$now}");
         
-        // Check for current paid allocation (booking time includes current time)
-        $currentAllocation = BedAllocation::where('bed_id', $bedId)
+        // Check for PAID allocation CURRENTLY IN PROGRESS (now between start and end)
+        $currentOccupied = BedAllocation::where('bed_id', $bedId)
             ->where('start_time', '<=', $now)
-            ->where('end_time', '>=', $now)
+            ->where('end_time', '>', $now)
             ->whereIn('status', ['confirmed', 'in_progress'])
             ->where('payment_status', 'paid')
             ->first();
         
-        if ($currentAllocation) {
-            \Log::info("Bed {$bedId} has current allocation #{$currentAllocation->id}, setting to occupied");
+        if ($currentOccupied) {
+            \Log::info("Bed {$bedId} is OCCUPIED: allocation #{$currentOccupied->id} ({$currentOccupied->start_time} - {$currentOccupied->end_time})");
             $bed->update(['status' => 'occupied']);
             return;
         }
         
-        // Check for upcoming paid allocation (within 30 minutes)
+        // Check for allocation starting within 15 minutes (lock window)
         $upcomingAllocation = BedAllocation::where('bed_id', $bedId)
             ->where('start_time', '>', $now)
-            ->where('start_time', '<=', $now->copy()->addMinutes(30))
-            ->whereIn('status', ['confirmed', 'in_progress'])
-            ->where('payment_status', 'paid')
+            ->where('start_time', '<=', $now->copy()->addMinutes($bookedSoonThreshold))
+            ->where('status', '!=', 'cancelled')
             ->first();
         
         if ($upcomingAllocation) {
-            \Log::info("Bed {$bedId} has upcoming allocation #{$upcomingAllocation->id}, setting to booked_soon");
+            \Log::info("Bed {$bedId} is BOOKED_SOON: allocation #{$upcomingAllocation->id} starts at {$upcomingAllocation->start_time}");
             $bed->update(['status' => 'booked_soon']);
             return;
         }
         
-        // No paid allocations - set to available
-        \Log::info("Bed {$bedId} has no paid allocations, setting to available");
+        // No active allocations in lock window - bed is available
+        \Log::info("Bed {$bedId} is AVAILABLE - no allocations in 15-min lock window");
         $bed->update(['status' => 'available']);
+    }
+    
+    /**
+     * Update bed status after payment is completed.
+     * 
+     * @param int $bedId The bed ID to update
+     * @param string $allocationStatus The new allocation status (in_progress or confirmed)
+     */
+    private function updateBedStatusAfterPayment(int $bedId, string $allocationStatus): void
+    {
+        $bed = Bed::find($bedId);
+        if (!$bed || $bed->status === 'maintenance') {
+            return;
+        }
+        
+        // After payment, check if booking is currently active
+        // If in_progress = booking time has started -> bed is occupied
+        // If confirmed = booking time hasn't started yet -> bed is booked_soon
+        if ($allocationStatus === 'in_progress') {
+            \Log::info("Bed {$bedId} payment completed, session in progress - setting to occupied");
+            $bed->update(['status' => 'occupied']);
+        } else {
+            \Log::info("Bed {$bedId} payment completed, session not started yet - setting to booked_soon");
+            $bed->update(['status' => 'booked_soon']);
+        }
     }
 }
