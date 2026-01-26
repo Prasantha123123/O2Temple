@@ -642,10 +642,7 @@ class POSController extends Controller
     {
         $invoice->load(['items', 'payments', 'customer', 'allocation.bed', 'allocation.package', 'creator']);
 
-        return response()->json([
-            'success' => true,
-            'invoice' => $invoice,
-        ]);
+        return view('pos.thermal-receipt', compact('invoice'));
     }
 
     /**
