@@ -73,7 +73,7 @@ const dashboardModules = [
         icon: CreditCard,
         color: 'bg-gradient-to-br from-purple-400 to-purple-600',
         textColor: 'text-white',
-        href: '#'
+        href: '/payment-history'
     },
     {
         id: 'reports',
@@ -82,7 +82,7 @@ const dashboardModules = [
         icon: BarChart3,
         color: 'bg-gradient-to-br from-pink-400 to-pink-600',
         textColor: 'text-white',
-        href: '#'
+        href: '/reports'
     }
 ];
 

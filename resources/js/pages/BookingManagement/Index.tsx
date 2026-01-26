@@ -267,7 +267,7 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
 
                     <div>
                       <div className="text-sm font-medium text-gray-900">{booking.package.name}</div>
-                      <div className="text-xs text-gray-500">₹{booking.package.price}</div>
+                      <div className="text-xs text-gray-500">LKR{booking.package.price}</div>
                     </div>
 
                     <div className="text-sm text-gray-700">

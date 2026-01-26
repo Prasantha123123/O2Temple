@@ -261,7 +261,7 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                               {pkg.duration_minutes} minutes
                             </div>
                             <div className="text-sm font-semibold text-yellow-600 mt-1">
-                              ₹{pkg.price}
+                              LKR {pkg.price}
                             </div>
                           </button>
                         ))}

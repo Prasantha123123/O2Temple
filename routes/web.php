@@ -8,6 +8,8 @@ use App\Http\Controllers\BedManagementController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\POSController;
+use App\Http\Controllers\PaymentHistoryController;
+use App\Http\Controllers\ReportsController;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -88,6 +90,17 @@ Route::middleware(['auth', 'verified'])->prefix('pos')->group(function () {
     Route::post('/customers/quick', [POSController::class, 'createQuickCustomer'])->name('pos.customers.quick');
 });
 
+
+// Payment History Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('payment-history', [PaymentHistoryController::class, 'index'])->name('payment-history.index');
+    Route::get('payment-history/{invoice}', [PaymentHistoryController::class, 'show'])->name('payment-history.show');
+});
+
+// Reports Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('reports', [ReportsController::class, 'index'])->name('reports.index');
+});
 
 // Resource Routes
 Route::middleware(['auth', 'verified'])->group(function () {

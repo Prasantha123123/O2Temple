@@ -20,4 +20,12 @@ class Customer extends Model
     {
         return $this->hasMany(BedAllocation::class);
     }
+
+    /**
+     * Get the invoices for the customer.
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
 }
