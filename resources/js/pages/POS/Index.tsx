@@ -162,7 +162,28 @@ const POSBilling: React.FC<Props> = ({
   const [isLoading, setIsLoading] = useState(false);
   
   // Customer form
-  const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
+  const [customerForm, setCustomerForm] = useState<{
+    name: string;
+    phone: string;
+    email?: string;
+    nic?: string;
+    address?: string;
+    age?: string;
+    dob?: string;
+    description?: string;
+  }>({
+    name: '',
+    phone: '',
+    email: '',
+    nic: '',
+    address: '',
+    age: '',
+    dob: '',
+    description: '',
+  });
+
+  // Customer form validation state
+  const [customerFormError, setCustomerFormError] = useState<string | null>(null);
   
   // Booking form
   const [bookingForm, setBookingForm] = useState({
@@ -387,11 +408,21 @@ const POSBilling: React.FC<Props> = ({
 
   // Quick create customer
   const handleCreateCustomer = async () => {
+    setCustomerFormError(null);
     if (!customerForm.name || !customerForm.phone) {
-      alert('Name and phone are required');
+      setCustomerFormError('Name and phone are required');
       return;
     }
-    
+    // Phone validation: only digits and exactly 10 digits
+    const phoneDigits = customerForm.phone.replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      setCustomerFormError('Phone number must be exactly 10 digits');
+      return;
+    }
+    if (!/^\d{10}$/.test(customerForm.phone)) {
+      setCustomerFormError('Phone number must contain only digits');
+      return;
+    }
     try {
       const response = await axios.post('/pos/customers/quick', customerForm);
       if (response.data.success) {
@@ -399,10 +430,11 @@ const POSBilling: React.FC<Props> = ({
         setCustomers([...customers, newCustomer]);
         setSelectedCustomer(newCustomer);
         setShowCustomerModal(false);
-        setCustomerForm({ name: '', phone: '', email: '' });
+        setCustomerForm({ name: '', phone: '', email: '', nic: '', address: '', age: '', dob: '', description: '' });
+        setCustomerFormError(null);
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Error creating customer');
+      setCustomerFormError(error.response?.data?.message || 'Error creating customer');
     }
   };
 
@@ -488,7 +520,7 @@ const POSBilling: React.FC<Props> = ({
   // Handle package selection for booking
   const handlePackageSelectForBooking = (pkg: Package) => {
     setSelectedPackageForBooking(pkg);
-    setActiveCategory('packages'); // Keep packages tab active
+    // setActiveCategory('packages'); // Removed: setActiveCategory is not defined
   };
 
   // Create booking from modal
@@ -931,7 +963,7 @@ const POSBilling: React.FC<Props> = ({
                 </div>
 
                 {/* Order Items */}
-                <div className="flex-1 p-4 overflow-y-auto min-h-[200px] max-h-[300px]">
+                <div className="flex-1 p-4 overflow-y-auto min-h-50 max-h-75">
                   <h2 className="font-semibold text-gray-900 mb-3">Order Items</h2>
                   {!invoice || invoice.items.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400 py-8">
@@ -1358,7 +1390,7 @@ const POSBilling: React.FC<Props> = ({
                 autoFocus
               />
             </div>
-            <div className="max-h-[300px] overflow-y-auto space-y-2">
+            <div className="max-h-75 overflow-y-auto space-y-2">
               {searchResults.length === 0 && bookingSearchQuery.length >= 2 && (
                 <p className="text-center text-gray-500 py-4">No bookings found</p>
               )}
@@ -1407,10 +1439,18 @@ const POSBilling: React.FC<Props> = ({
               <Label>Phone *</Label>
               <Input
                 value={customerForm.phone}
-                onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                onChange={(e) => {
+                  // Only allow digits in input
+                  const val = e.target.value.replace(/\D/g, '');
+                  setCustomerForm({ ...customerForm, phone: val });
+                }}
+                maxLength={10}
                 placeholder="Enter phone number"
               />
             </div>
+            {customerFormError && (
+              <div className="text-red-600 text-sm mt-1">{customerFormError}</div>
+            )}
             <div>
               <Label>Email (Optional)</Label>
               <Input
