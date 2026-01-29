@@ -99,6 +99,8 @@ interface Booking {
   payment_status: string;
   total_amount?: number;
   final_amount?: number;
+  advance_paid?: number;
+  balance_amount?: number;
 }
 
 interface InvoiceItem {
@@ -244,9 +246,21 @@ const POSBilling: React.FC<Props> = ({
 
   // Auto-load booking if navigating from Booking Management
   useEffect(() => {
-    if (loadedBooking && !invoice) {
-      // Auto-select the booking for billing
-      handleSelectBooking(loadedBooking);
+    if (loadedBooking) {
+      // Set customer from loaded booking
+      setSelectedCustomer(loadedBooking.customer);
+      
+      // Find and select the bed
+      const bed = beds.find(b => b.id === loadedBooking.bed.id);
+      if (bed) {
+        setSelectedBed(bed);
+      }
+      
+      // If invoice is already provided from backend (with advance payment handling), use it
+      // Otherwise create invoice via API
+      if (!invoice) {
+        handleSelectBooking(loadedBooking);
+      }
     }
   }, [loadedBooking]); // Only run once when component mounts with loadedBooking
 
@@ -1494,6 +1508,11 @@ const POSBilling: React.FC<Props> = ({
                         }>
                           {booking.payment_status === 'pending' ? '💳 AWAITING PAYMENT' : '✓ Paid'}
                         </Badge>
+                        {booking.advance_paid && booking.advance_paid > 0 && (
+                          <Badge className="bg-blue-100 text-blue-700">
+                            Advance Paid
+                          </Badge>
+                        )}
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
@@ -1533,6 +1552,16 @@ const POSBilling: React.FC<Props> = ({
                       <div className="text-xs text-gray-500 mt-1">
                         {booking.package.duration_minutes} min
                       </div>
+                      {booking.advance_paid && booking.advance_paid > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-xs text-blue-600">
+                            Advance: {new Intl.NumberFormat('en-LK', { style: 'decimal', minimumFractionDigits: 2 }).format(booking.advance_paid)} LKR
+                          </div>
+                          <div className="text-sm font-bold text-orange-600">
+                            Balance: {new Intl.NumberFormat('en-LK', { style: 'decimal', minimumFractionDigits: 2 }).format(booking.balance_amount || 0)} LKR
+                          </div>
+                        </div>
+                      )}
                       {booking.payment_status === 'pending' && (
                         <div className="mt-2 px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
                           Click to Bill

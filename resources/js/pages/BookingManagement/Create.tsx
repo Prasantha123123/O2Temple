@@ -51,15 +51,15 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
   const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
 
-  // Debug: Log props to console
-  console.log('Booking Create Props:', { beds, packages, customers });
-
   const { data, setData, post, processing, errors } = useForm({
     customer_id: '',
     bed_id: '',
     package_id: '',
     start_time: '',
     end_time: '',
+    advance_payment: '',
+    payment_method: 'cash',
+    payment_reference: '',
   });
 
   // Fetch available slots when bed, package, and date are selected
@@ -280,9 +280,76 @@ const CreateBooking: React.FC<Props> = ({ beds, packages, customers }) => {
                         value={selectedDate}
                         onChange={(e) => handleDateChange(e.target.value)}
                         className="mt-1 w-full h-10 px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 focus:outline-none cursor-pointer [color-scheme:light]"
-                        required
                       />
                     </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white border-gray-200">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-gray-900">
+                      <RectangleStackIcon className="w-5 h-5 text-green-600" />
+                      Advance Payment (Optional)
+                    </CardTitle>
+                    <CardDescription className="text-gray-500">
+                      {selectedPackage 
+                        ? `Booking cost: LKR ${parseFloat(selectedPackage.price.toString()).toFixed(2)}` 
+                        : 'Select a package to see the amount'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label htmlFor="advance_payment" className="text-gray-700">Advance Payment Amount (LKR)</Label>
+                      <Input
+                        id="advance_payment"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={data.advance_payment}
+                        onChange={(e) => setData('advance_payment', e.target.value)}
+                        placeholder="0.00"
+                        className="mt-1 border border-gray-300"
+                      />
+                      {selectedPackage && data.advance_payment && (
+                        <p className="text-sm mt-2 text-gray-600">
+                          Balance to pay: LKR {(parseFloat(selectedPackage.price.toString()) - parseFloat(data.advance_payment || '0')).toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+
+                    {data.advance_payment && (
+                      <>
+                        <div>
+                          <Label htmlFor="payment_method" className="text-gray-700">Payment Method *</Label>
+                          <select
+                            id="payment_method"
+                            value={data.payment_method}
+                            onChange={(e) => setData('payment_method', e.target.value)}
+                            className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 focus:border-green-500 focus:ring-green-500 bg-white text-gray-900"
+                          >
+                            <option value="cash">Cash</option>
+                            <option value="card">Card</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                          </select>
+                        </div>
+
+                        {data.payment_method !== 'cash' && (
+                          <div>
+                            <Label htmlFor="payment_reference" className="text-gray-700">
+                              {data.payment_method === 'card' ? 'Card Reference / Last 4 Digits' : 'Bank Transfer Reference'}
+                            </Label>
+                            <Input
+                              id="payment_reference"
+                              type="text"
+                              value={data.payment_reference}
+                              onChange={(e) => setData('payment_reference', e.target.value)}
+                              placeholder={data.payment_method === 'card' ? 'e.g., 1234' : 'e.g., TRF123456'}
+                              className="mt-1 border border-gray-300"
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </div>

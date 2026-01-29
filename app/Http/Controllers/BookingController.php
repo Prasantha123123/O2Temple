@@ -7,9 +7,11 @@ use App\Models\Bed;
 use App\Models\Package;
 use App\Models\Customer;
 use App\Services\BedAvailabilityService;
+use App\Models\AdvancePayment;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class BookingController extends Controller
 {
@@ -18,7 +20,12 @@ class BookingController extends Controller
      */
     public function index(Request $request)
     {
-        $query = BedAllocation::with(['customer', 'bed', 'package'])
+        // Auto-complete bookings whose end_time has passed
+        BedAllocation::whereIn('status', ['confirmed', 'in_progress'])
+            ->where('end_time', '<', now())
+            ->update(['status' => 'completed']);
+
+        $query = BedAllocation::with(['customer', 'bed', 'package', 'advancePayments'])
             ->orderBy('start_time', 'desc');
 
         // Apply filters
@@ -137,6 +144,9 @@ class BookingController extends Controller
             'package_id' => 'required|exists:packages,id',
             'start_time' => 'required|date|after:now',
             'end_time' => 'required|date|after:start_time',
+            'advance_payment' => 'nullable|numeric|min:0',
+            'payment_method' => 'required_with:advance_payment|in:cash,card,bank_transfer',
+            'payment_reference' => 'nullable|string|max:255',
         ]);
 
         $now = now();
@@ -175,26 +185,64 @@ class BookingController extends Controller
 
         // Get package for pricing
         $package = Package::findOrFail($validated['package_id']);
+        
+        // Validate advance payment doesn't exceed package price
+        $advanceAmount = floatval($validated['advance_payment'] ?? 0);
+        if ($advanceAmount > $package->price) {
+            return back()->withErrors(['advance_payment' => 'Advance payment cannot exceed the package price.']);
+        }
 
-        // Create booking with pending status (no payment yet)
-        $booking = BedAllocation::create([
-            'customer_id' => $validated['customer_id'],
-            'bed_id' => $validated['bed_id'],
-            'package_id' => $validated['package_id'],
-            'start_time' => $validated['start_time'],
-            'end_time' => $validated['end_time'],
-            'status' => 'pending', // Booking without payment starts as pending
-            'payment_status' => 'pending', // No payment yet
-            'total_amount' => $package->price,
-            'final_amount' => $package->price,
-            'created_by' => auth()->id(),
-        ]);
+        DB::beginTransaction();
+        try {
+            // Create booking with pending status (no payment yet)
+            $booking = BedAllocation::create([
+                'customer_id' => $validated['customer_id'],
+                'bed_id' => $validated['bed_id'],
+                'package_id' => $validated['package_id'],
+                'start_time' => $validated['start_time'],
+                'end_time' => $validated['end_time'],
+                'status' => 'pending', // Booking without payment starts as pending
+                'payment_status' => 'pending', // Will be updated based on advance payment
+                'total_amount' => $package->price,
+                'final_amount' => $package->price,
+                'created_by' => auth()->id(),
+            ]);
 
-        // Update bed status dynamically using the service
-        $bedAvailabilityService = new BedAvailabilityService();
-        $bedAvailabilityService->updateBedTableStatuses();
+            // Create advance payment if provided
+            if ($advanceAmount > 0) {
+                AdvancePayment::create([
+                    'allocation_id' => $booking->id,
+                    'customer_id' => $validated['customer_id'],
+                    'amount' => $advanceAmount,
+                    'payment_method' => $validated['payment_method'] ?? 'cash',
+                    'reference_number' => $validated['payment_reference'] ?? null,
+                    'received_by' => auth()->id(),
+                ]);
+                
+                // Update booking status based on payment
+                $booking->update([
+                    'status' => 'confirmed', // Confirmed if advance paid
+                    'payment_status' => $advanceAmount >= $package->price ? 'paid' : 'pending',
+                ]);
+            }
 
-        return redirect()->route('bookings.index')->with('success', 'Booking created successfully! The bed will be locked 15 minutes before the booking time.');
+            DB::commit();
+
+            // Update bed status dynamically using the service
+            $bedAvailabilityService = new BedAvailabilityService();
+            $bedAvailabilityService->updateBedTableStatuses();
+
+            $successMessage = 'Booking created successfully!';
+            if ($advanceAmount > 0) {
+                $successMessage .= ' Advance payment of LKR ' . number_format($advanceAmount, 2) . ' recorded.';
+            }
+            $successMessage .= ' The bed will be locked 15 minutes before the booking time.';
+
+            return redirect()->route('bookings.index')->with('success', $successMessage);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Failed to create booking: ' . $e->getMessage()]);
+        }
     }
 
     /**
@@ -248,5 +296,24 @@ class BookingController extends Controller
         $bedAvailabilityService->updateBedTableStatuses();
 
         return back()->with('success', 'Booking deleted successfully!');
+    }
+
+    /**
+     * Print advance payment receipt for a booking.
+     */
+    public function printAdvancePaymentReceipt(BedAllocation $booking)
+    {
+        $booking->load(['customer', 'bed', 'package', 'advancePayments.receivedBy']);
+        
+        if ($booking->advancePayments->isEmpty()) {
+            return back()->with('error', 'No advance payments found for this booking.');
+        }
+        
+        return view('bookings.advance-payment-receipt', [
+            'booking' => $booking,
+            'advancePayments' => $booking->advancePayments,
+            'totalAdvancePaid' => $booking->advancePayments->sum('amount'),
+            'balanceAmount' => max(0, ($booking->total_amount ?? $booking->package->price) - $booking->advancePayments->sum('amount')),
+        ]);
     }
 }

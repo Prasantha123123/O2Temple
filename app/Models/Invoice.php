@@ -148,25 +148,34 @@ class Invoice extends Model
      */
     public function calculateTotals(): void
     {
-        $subtotal = $this->items()->sum('total_price');
+        $subtotal = $this->items()->sum('total_price') ?? 0;
         
-        $discountAmount = $this->discount_percentage > 0 
-            ? ($subtotal * $this->discount_percentage / 100) 
-            : $this->discount_amount;
+        // Ensure percentages and amounts have default values
+        $discountPercentage = $this->discount_percentage ?? 0;
+        $discountAmountStored = $this->discount_amount ?? 0;
+        $serviceChargePercentage = $this->service_charge_percentage ?? 0;
+        $serviceChargeStored = $this->service_charge ?? 0;
+        $taxPercentage = $this->tax_percentage ?? 0;
+        $taxAmountStored = $this->tax_amount ?? 0;
+        $additionalCharges = $this->additional_charges ?? 0;
+        
+        $discountAmount = $discountPercentage > 0 
+            ? ($subtotal * $discountPercentage / 100) 
+            : $discountAmountStored;
         
         $afterDiscount = $subtotal - $discountAmount;
         
-        $serviceCharge = $this->service_charge_percentage > 0 
-            ? ($afterDiscount * $this->service_charge_percentage / 100) 
-            : $this->service_charge;
+        $serviceCharge = $serviceChargePercentage > 0 
+            ? ($afterDiscount * $serviceChargePercentage / 100) 
+            : $serviceChargeStored;
         
         $taxableAmount = $afterDiscount + $serviceCharge;
-        $taxAmount = $this->tax_percentage > 0 
-            ? ($taxableAmount * $this->tax_percentage / 100) 
-            : $this->tax_amount;
+        $taxAmount = $taxPercentage > 0 
+            ? ($taxableAmount * $taxPercentage / 100) 
+            : $taxAmountStored;
         
-        $totalAmount = $taxableAmount + $taxAmount + $this->additional_charges;
-        $paidAmount = $this->payments()->where('status', 'completed')->sum('amount');
+        $totalAmount = $taxableAmount + $taxAmount + $additionalCharges;
+        $paidAmount = $this->payments()->where('status', 'completed')->sum('amount') ?? 0;
         $balanceAmount = $totalAmount - $paidAmount;
 
         $this->update([

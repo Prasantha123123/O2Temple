@@ -55,6 +55,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('bookings/create', [\App\Http\Controllers\BookingController::class, 'create'])->name('bookings.create');
     Route::post('bookings', [\App\Http\Controllers\BookingController::class, 'store'])->name('bookings.store');
     Route::get('bookings/available-slots', [\App\Http\Controllers\BookingController::class, 'getAvailableSlots'])->name('bookings.available-slots');
+    Route::get('bookings/{booking}/advance-payment-receipt', [\App\Http\Controllers\BookingController::class, 'printAdvancePaymentReceipt'])->name('bookings.advance-payment-receipt');
     Route::patch('bookings/{booking}/status', [\App\Http\Controllers\BookingController::class, 'updateStatus'])->name('bookings.update-status');
     Route::patch('bookings/{booking}/payment-status', [\App\Http\Controllers\BookingController::class, 'updatePaymentStatus'])->name('bookings.update-payment-status');
     Route::delete('bookings/{booking}', [\App\Http\Controllers\BookingController::class, 'destroy'])->name('bookings.destroy');

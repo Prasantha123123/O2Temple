@@ -201,27 +201,59 @@
         ITEMS
     </div>
 
-    @foreach($invoice->items as $item)
-    <div class="item">
-        <div class="item-name">{{ $item->item_name }}</div>
-        <div class="item-details">
-            <span>{{ $item->quantity }}x {{ number_format($item->unit_price, 2) }}</span>
-            <span>{{ number_format($item->quantity * $item->unit_price, 2) }}</span>
+    @php
+        $hasAdvancePayment = isset($totalAdvancePaid) && $totalAdvancePaid > 0;
+    @endphp
+
+    @if($hasAdvancePayment && $originalPackagePrice > 0)
+        {{-- Show original package price for bookings with advance payment --}}
+        <div class="item">
+            <div class="item-name">{{ $invoice->allocation->package->name ?? 'Package' }}</div>
+            <div class="item-details">
+                <span>1x {{ number_format($originalPackagePrice, 2) }}</span>
+                <span>{{ number_format($originalPackagePrice, 2) }}</span>
+            </div>
         </div>
-        @if($item->discount_amount > 0)
-        <div class="item-details">
-            <span>Discount</span>
-            <span>-{{ number_format($item->discount_amount, 2) }}</span>
+    @else
+        {{-- Normal item display --}}
+        @foreach($invoice->items as $item)
+        <div class="item">
+            <div class="item-name">{{ $item->item_name }}</div>
+            <div class="item-details">
+                <span>{{ $item->quantity }}x {{ number_format($item->unit_price, 2) }}</span>
+                <span>{{ number_format($item->quantity * $item->unit_price, 2) }}</span>
+            </div>
+            @if($item->discount_amount > 0)
+            <div class="item-details">
+                <span>Discount</span>
+                <span>-{{ number_format($item->discount_amount, 2) }}</span>
+            </div>
+            @endif
         </div>
-        @endif
-    </div>
-    @endforeach
+        @endforeach
+    @endif
 
     <div class="totals">
-        <div class="total-row">
-            <span>Subtotal:</span>
-            <span>LKR {{ number_format($invoice->subtotal, 2) }}</span>
-        </div>
+        @if($hasAdvancePayment && $originalPackagePrice > 0)
+            <div class="total-row">
+                <span>Package Price:</span>
+                <span>LKR {{ number_format($originalPackagePrice, 2) }}</span>
+            </div>
+            <div class="total-row" style="color: #0066cc;">
+                <span>Advance Paid:</span>
+                <span>-LKR {{ number_format($totalAdvancePaid, 2) }}</span>
+            </div>
+            <div class="total-row">
+                <span>Balance Due:</span>
+                <span>LKR {{ number_format($originalPackagePrice - $totalAdvancePaid, 2) }}</span>
+            </div>
+        @else
+            <div class="total-row">
+                <span>Subtotal:</span>
+                <span>LKR {{ number_format($invoice->subtotal, 2) }}</span>
+            </div>
+        @endif
+        
         @if($invoice->discount_amount > 0)
         <div class="total-row">
             <span>Discount:</span>
@@ -243,13 +275,25 @@
         
         <div class="total-row grand-total">
             <span>TOTAL:</span>
-            <span>LKR {{ number_format($invoice->total_amount, 2) }}</span>
+            <span>LKR {{ number_format($hasAdvancePayment ? $originalPackagePrice : $invoice->total_amount, 2) }}</span>
         </div>
     </div>
 
+    @if($hasAdvancePayment && isset($advancePayments) && $advancePayments->count() > 0)
+    <div class="payment-info">
+        <div class="bold center">ADVANCE PAYMENTS</div>
+        @foreach($advancePayments as $advPayment)
+        <div class="total-row">
+            <span>{{ ucfirst($advPayment->payment_method) }}:</span>
+            <span>LKR {{ number_format($advPayment->amount, 2) }}</span>
+        </div>
+        @endforeach
+    </div>
+    @endif
+
     @if($invoice->payments->isNotEmpty())
     <div class="payment-info">
-        <div class="bold center">PAYMENTS</div>
+        <div class="bold center">{{ $hasAdvancePayment ? 'BALANCE PAYMENTS' : 'PAYMENTS' }}</div>
         @foreach($invoice->payments as $payment)
         <div class="total-row">
             <span>{{ ucfirst($payment->payment_method) }}:</span>

@@ -35,6 +35,12 @@ interface Booking {
   end_time: string;
   status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
   payment_status: 'pending' | 'paid' | 'refunded';
+  advance_payments?: Array<{
+    id: number;
+    amount: number;
+    payment_method: string;
+    reference_number?: string;
+  }>;
   created_at: string;
 }
 
@@ -108,15 +114,39 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
     return <Badge className={config.className}>{config.label}</Badge>;
   };
 
-  const getPaymentBadge = (status: string) => {
-    const statusConfig = {
+  const getPaymentBadge = (booking: Booking) => {
+    const advancePaid = calculateTotalAdvancePaid(booking);
+    const packagePrice = parseFloat(booking.package.price.toString());
+    
+    // Determine actual payment status based on advance payments
+    let status: string = booking.payment_status;
+    if (advancePaid > 0 && advancePaid < packagePrice && status === 'pending') {
+      status = 'partial';
+    }
+    
+    const statusConfig: Record<string, { label: string; className: string }> = {
       pending: { label: 'Pending', className: 'bg-orange-100 text-orange-700' },
+      partial: { label: 'Partial', className: 'bg-yellow-100 text-yellow-700' },
       paid: { label: 'Paid', className: 'bg-green-100 text-green-700' },
       refunded: { label: 'Refunded', className: 'bg-gray-100 text-gray-700' },
     };
 
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
+    const config = statusConfig[status] || statusConfig.pending;
     return <Badge className={config.className}>{config.label}</Badge>;
+  };
+
+  const calculateTotalAdvancePaid = (booking: Booking): number => {
+    if (!booking.advance_payments || booking.advance_payments.length === 0) return 0;
+    return booking.advance_payments.reduce((total, payment) => total + parseFloat(payment.amount.toString()), 0);
+  };
+
+  const calculateBalance = (booking: Booking): number => {
+    // If already fully paid, balance is 0
+    if (booking.payment_status === 'paid') return 0;
+    
+    const packagePrice = parseFloat(booking.package.price.toString());
+    const advancePaid = calculateTotalAdvancePaid(booking);
+    return Math.max(0, packagePrice - advancePaid);
   };
 
   const formatDateTime = (dateTime: string) => {
@@ -283,9 +313,15 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        {getPaymentBadge(booking.payment_status)}
-                        {/* Load to POS Billing button for pending payment bookings */}
-                        {booking.payment_status === 'pending' && booking.status !== 'cancelled' && (
+                        {getPaymentBadge(booking)}
+                        {/* Show balance info if advance payment exists and balance > 0 */}
+                        {booking.advance_payments && booking.advance_payments.length > 0 && calculateBalance(booking) > 0 && (
+                          <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
+                            <span className="font-semibold">Balance: LKR {calculateBalance(booking).toFixed(2)}</span>
+                          </div>
+                        )}
+                        {/* Load to POS Billing button for pending/partial payment bookings */}
+                        {booking.payment_status !== 'paid' && booking.status !== 'cancelled' && calculateBalance(booking) > 0 && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -294,6 +330,18 @@ const BookingManagement: React.FC<Props> = ({ bookings, filters }) => {
                             title="Load booking into POS Billing for payment"
                           >
                             <CreditCardIcon className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {/* View advance payment receipt button if advance payments exist */}
+                        {booking.advance_payments && booking.advance_payments.length > 0 && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => router.get(`/bookings/${booking.id}/advance-payment-receipt`)}
+                            className="text-green-600 hover:text-green-700 hover:bg-green-50 p-1"
+                            title="View advance payment receipt"
+                          >
+                            📄
                           </Button>
                         )}
                       </div>
