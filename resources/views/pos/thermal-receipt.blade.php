@@ -11,68 +11,70 @@
         }
         
         body {
-            font-family: 'Courier New', monospace;
+            font-family: 'Arial', sans-serif;
             font-size: 12px;
-            line-height: 1.2;
+            line-height: 1.1;
             margin: 0;
-            padding: 5mm;
-            width: 70mm;
+            padding: 3mm 2mm;
+            width: 76mm;
             color: #000;
             background: #fff;
         }
         
         .receipt-header {
             text-align: center;
-            margin-bottom: 10px;
+            margin-bottom: 6px;
             border-bottom: 1px dashed #000;
-            padding-bottom: 5px;
+            padding-bottom: 3px;
         }
         
         .logo {
-            width: 150px;
-            height: 150px;
+            width: 80px;
+            height: 80px;
         }
         
         .business-name {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: bold;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
         
         .business-info {
             font-size: 10px;
-            line-height: 1.1;
+            line-height: 1.0;
+            margin-bottom: 1px;
         }
         
         .receipt-title {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: bold;
-            margin: 8px 0;
+            margin: 4px 0 3px 0;
             text-align: center;
         }
         
         .receipt-info {
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             font-size: 11px;
         }
         
         .info-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
+            word-break: break-word;
         }
         
         .items-header {
             border-top: 1px dashed #000;
             border-bottom: 1px dashed #000;
-            padding: 3px 0;
-            margin: 8px 0;
+            padding: 2px 0;
+            margin: 3px 0;
             font-weight: bold;
             font-size: 11px;
         }
         
         .item {
-            margin-bottom: 3px;
+            margin-bottom: 2px;
             font-size: 11px;
         }
         
@@ -95,30 +97,30 @@
         .total-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
             font-size: 11px;
         }
         
         .grand-total {
             border-top: 1px solid #000;
             border-bottom: 1px solid #000;
-            padding: 3px 0;
-            margin: 3px 0;
+            padding: 2px 0;
+            margin: 2px 0;
             font-weight: bold;
             font-size: 12px;
         }
         
         .payment-info {
-            margin-top: 8px;
+            margin-top: 4px;
             border-top: 1px dashed #000;
-            padding-top: 5px;
+            padding-top: 3px;
         }
         
         .receipt-footer {
             text-align: center;
-            margin-top: 10px;
+            margin-top: 5px;
             border-top: 1px dashed #000;
-            padding-top: 5px;
+            padding-top: 3px;
             font-size: 10px;
         }
         
@@ -199,27 +201,59 @@
         ITEMS
     </div>
 
-    @foreach($invoice->items as $item)
-    <div class="item">
-        <div class="item-name">{{ $item->item_name }}</div>
-        <div class="item-details">
-            <span>{{ $item->quantity }}x {{ number_format($item->unit_price, 2) }}</span>
-            <span>{{ number_format($item->quantity * $item->unit_price, 2) }}</span>
+    @php
+        $hasAdvancePayment = isset($totalAdvancePaid) && $totalAdvancePaid > 0;
+    @endphp
+
+    @if($hasAdvancePayment && $originalPackagePrice > 0)
+        {{-- Show original package price for bookings with advance payment --}}
+        <div class="item">
+            <div class="item-name">{{ $invoice->allocation->package->name ?? 'Package' }}</div>
+            <div class="item-details">
+                <span>1x {{ number_format($originalPackagePrice, 2) }}</span>
+                <span>{{ number_format($originalPackagePrice, 2) }}</span>
+            </div>
         </div>
-        @if($item->discount_amount > 0)
-        <div class="item-details">
-            <span>Discount</span>
-            <span>-{{ number_format($item->discount_amount, 2) }}</span>
+    @else
+        {{-- Normal item display --}}
+        @foreach($invoice->items as $item)
+        <div class="item">
+            <div class="item-name">{{ $item->item_name }}</div>
+            <div class="item-details">
+                <span>{{ $item->quantity }}x {{ number_format($item->unit_price, 2) }}</span>
+                <span>{{ number_format($item->quantity * $item->unit_price, 2) }}</span>
+            </div>
+            @if($item->discount_amount > 0)
+            <div class="item-details">
+                <span>Discount</span>
+                <span>-{{ number_format($item->discount_amount, 2) }}</span>
+            </div>
+            @endif
         </div>
-        @endif
-    </div>
-    @endforeach
+        @endforeach
+    @endif
 
     <div class="totals">
-        <div class="total-row">
-            <span>Subtotal:</span>
-            <span>LKR {{ number_format($invoice->subtotal, 2) }}</span>
-        </div>
+        @if($hasAdvancePayment && $originalPackagePrice > 0)
+            <div class="total-row">
+                <span>Package Price:</span>
+                <span>LKR {{ number_format($originalPackagePrice, 2) }}</span>
+            </div>
+            <div class="total-row" style="color: #0066cc;">
+                <span>Advance Paid:</span>
+                <span>-LKR {{ number_format($totalAdvancePaid, 2) }}</span>
+            </div>
+            <div class="total-row">
+                <span>Balance Due:</span>
+                <span>LKR {{ number_format($originalPackagePrice - $totalAdvancePaid, 2) }}</span>
+            </div>
+        @else
+            <div class="total-row">
+                <span>Subtotal:</span>
+                <span>LKR {{ number_format($invoice->subtotal, 2) }}</span>
+            </div>
+        @endif
+        
         @if($invoice->discount_amount > 0)
         <div class="total-row">
             <span>Discount:</span>
@@ -241,13 +275,25 @@
         
         <div class="total-row grand-total">
             <span>TOTAL:</span>
-            <span>LKR {{ number_format($invoice->total_amount, 2) }}</span>
+            <span>LKR {{ number_format($hasAdvancePayment ? $originalPackagePrice : $invoice->total_amount, 2) }}</span>
         </div>
     </div>
 
+    @if($hasAdvancePayment && isset($advancePayments) && $advancePayments->count() > 0)
+    <div class="payment-info">
+        <div class="bold center">ADVANCE PAYMENTS</div>
+        @foreach($advancePayments as $advPayment)
+        <div class="total-row">
+            <span>{{ ucfirst($advPayment->payment_method) }}:</span>
+            <span>LKR {{ number_format($advPayment->amount, 2) }}</span>
+        </div>
+        @endforeach
+    </div>
+    @endif
+
     @if($invoice->payments->isNotEmpty())
     <div class="payment-info">
-        <div class="bold center">PAYMENTS</div>
+        <div class="bold center">{{ $hasAdvancePayment ? 'BALANCE PAYMENTS' : 'PAYMENTS' }}</div>
         @foreach($invoice->payments as $payment)
         <div class="total-row">
             <span>{{ ucfirst($payment->payment_method) }}:</span>

@@ -112,6 +112,31 @@ class BedAllocation extends Model
     }
 
     /**
+     * Get the advance payments for the allocation.
+     */
+    public function advancePayments(): HasMany
+    {
+        return $this->hasMany(AdvancePayment::class, 'allocation_id');
+    }
+
+    /**
+     * Get total advance payments amount.
+     */
+    public function getTotalAdvancePaidAttribute(): float
+    {
+        return $this->advancePayments()->sum('amount');
+    }
+
+    /**
+     * Get balance amount after advance payments.
+     */
+    public function getBalanceAmountAttribute(): float
+    {
+        $totalAmount = $this->total_amount ?? $this->package?->price ?? 0;
+        return max(0, $totalAmount - $this->total_advance_paid);
+    }
+
+    /**
      * Get the user who created the booking.
      */
     public function creator(): BelongsTo

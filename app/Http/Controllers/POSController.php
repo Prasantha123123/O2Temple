@@ -37,13 +37,17 @@ class POSController extends Controller
         // Check if we need to load a specific booking (from Booking Management)
         $loadBookingId = $request->get('load_booking');
         if ($loadBookingId) {
-            $booking = BedAllocation::with(['customer', 'bed', 'package'])
+            $booking = BedAllocation::with(['customer', 'bed', 'package', 'advancePayments'])
                 ->where('id', $loadBookingId)
                 ->where('payment_status', 'pending')
                 ->where('status', '!=', 'cancelled')
                 ->first();
             
             if ($booking) {
+                // Calculate total advance paid and balance
+                $totalAdvancePaid = $booking->advancePayments->sum('amount');
+                $balanceAmount = max(0, ($booking->package->price ?? $booking->total_amount ?? 0) - $totalAdvancePaid);
+                
                 $loadedBooking = [
                     'id' => $booking->id,
                     'booking_number' => $booking->booking_number,
@@ -69,12 +73,49 @@ class POSController extends Controller
                     'status' => $booking->status,
                     'payment_status' => $booking->payment_status,
                     'total_amount' => $booking->total_amount ?? $booking->package->price,
-                    'final_amount' => $booking->final_amount ?? $booking->package->price,
+                    'final_amount' => $balanceAmount, // Use balance as final_amount to pay
+                    'advance_paid' => $totalAdvancePaid,
+                    'balance_amount' => $balanceAmount,
                 ];
+                
+                // Also create/load the invoice for this booking directly
+                // Delete any existing draft invoice to recalculate with advance payment
+                Invoice::where('status', 'draft')
+                    ->where('allocation_id', $booking->id)
+                    ->delete();
+                
+                // Create fresh invoice with correct balance
+                $activeInvoice = Invoice::create([
+                    'customer_id' => $booking->customer->id,
+                    'allocation_id' => $booking->id,
+                    'invoice_type' => 'booking',
+                    'status' => 'draft',
+                    'created_by' => auth()->id(),
+                ]);
+                
+                // Add package as invoice item with balance amount
+                InvoiceItem::create([
+                    'invoice_id' => $activeInvoice->id,
+                    'package_id' => $booking->package->id,
+                    'item_type' => 'package',
+                    'item_name' => $booking->package->name,
+                    'description' => "Duration: {$booking->package->duration_minutes} minutes" . 
+                        ($totalAdvancePaid > 0 ? " (Advance paid: LKR " . number_format($totalAdvancePaid, 2) . ")" : ""),
+                    'quantity' => 1,
+                    'unit_price' => $balanceAmount,
+                    'total_price' => $balanceAmount,
+                ]);
+                
+                // Calculate totals
+                $activeInvoice->calculateTotals();
+                $activeInvoice = $activeInvoice->fresh()->load(['items', 'payments', 'customer', 'allocation.bed', 'allocation.package']);
+                
+                // Set selected bed
+                $selectedBedId = $booking->bed->id;
             }
         }
         
-        if ($selectedBedId) {
+        if ($selectedBedId && !$activeInvoice) {
             $activeInvoice = Invoice::where('status', 'draft')
                 ->whereHas('allocation', function ($q) use ($selectedBedId) {
                     $q->where('bed_id', $selectedBedId);
@@ -197,13 +238,17 @@ class POSController extends Controller
             })
             ->where('status', '!=', 'cancelled')
             ->where('end_time', '>=', now()) // Only non-expired bookings
-            ->with(['customer', 'bed', 'package'])
+            ->with(['customer', 'bed', 'package', 'advancePayments'])
             // Order by: pending (unpaid) first, then by start_time
             ->orderByRaw("CASE WHEN payment_status = 'pending' THEN 0 ELSE 1 END")
             ->orderBy('start_time', 'desc')
             ->limit(15)
             ->get()
             ->map(function ($booking) {
+                $totalAdvancePaid = $booking->advancePayments->sum('amount');
+                $packagePrice = $booking->package->price ?? $booking->total_amount ?? 0;
+                $balanceAmount = max(0, $packagePrice - $totalAdvancePaid);
+                
                 return [
                     'id' => $booking->id,
                     'booking_number' => $booking->booking_number,
@@ -229,7 +274,9 @@ class POSController extends Controller
                     'status' => $booking->status,
                     'payment_status' => $booking->payment_status,
                     'total_amount' => $booking->total_amount ?? $booking->package->price,
-                    'final_amount' => $booking->final_amount ?? $booking->package->price,
+                    'final_amount' => $balanceAmount, // Balance to pay
+                    'advance_paid' => $totalAdvancePaid,
+                    'balance_amount' => $balanceAmount,
                 ];
             });
 
@@ -413,18 +460,31 @@ class POSController extends Controller
 
         // For addon invoices, don't check for existing draft - always create new
         if ($validated['invoice_type'] !== 'addon') {
-            // Check for existing draft invoice
-            $existingInvoice = Invoice::where('status', 'draft')
-                ->when($validated['allocation_id'] ?? null, function ($q, $allocationId) {
-                    $q->where('allocation_id', $allocationId);
-                })
-                ->first();
+            // Check if booking has advance payments - if so, delete old invoice to recalculate balance
+            if ($validated['allocation_id']) {
+                $allocation = BedAllocation::with('advancePayments')->find($validated['allocation_id']);
+                $hasAdvancePayment = $allocation && $allocation->advancePayments->count() > 0;
+                
+                // If has advance payment, delete old invoice to create fresh one with correct balance
+                if ($hasAdvancePayment) {
+                    Invoice::where('status', 'draft')
+                        ->where('allocation_id', $validated['allocation_id'])
+                        ->delete();
+                } else {
+                    // Check for existing draft invoice only if no advance payment
+                    $existingInvoice = Invoice::where('status', 'draft')
+                        ->when($validated['allocation_id'] ?? null, function ($q, $allocationId) {
+                            $q->where('allocation_id', $allocationId);
+                        })
+                        ->first();
 
-            if ($existingInvoice) {
-                return response()->json([
-                    'success' => true,
-                    'invoice' => $existingInvoice->load(['items', 'payments', 'customer', 'allocation']),
-                ]);
+                    if ($existingInvoice) {
+                        return response()->json([
+                            'success' => true,
+                            'invoice' => $existingInvoice->load(['items', 'payments', 'customer', 'allocation']),
+                        ]);
+                    }
+                }
             }
         }
 
@@ -439,8 +499,12 @@ class POSController extends Controller
 
         // If booking invoice, add package as first item
         if ($validated['allocation_id']) {
-            $allocation = BedAllocation::with('package')->find($validated['allocation_id']);
+            $allocation = BedAllocation::with(['package', 'advancePayments'])->find($validated['allocation_id']);
             if ($allocation && $allocation->package) {
+                // Calculate the price to charge (balance amount if advance payment exists)
+                $totalAdvancePaid = $allocation->advancePayments->sum('amount');
+                $balanceAmount = max(0, $allocation->package->price - $totalAdvancePaid);
+                
                 InvoiceItem::create([
                     'invoice_id' => $invoice->id,
                     'package_id' => $allocation->package->id,
@@ -448,15 +512,18 @@ class POSController extends Controller
                     'item_name' => $allocation->package->name,
                     'description' => "Duration: {$allocation->package->duration_minutes} minutes",
                     'quantity' => 1,
-                    'unit_price' => $allocation->package->price,
-                    'total_price' => $allocation->package->price,
+                    'unit_price' => $balanceAmount, // Use balance amount as unit price
+                    'total_price' => $balanceAmount,
                 ]);
             }
         }
 
+        // Calculate invoice totals after adding items
+        $invoice->calculateTotals();
+
         return response()->json([
             'success' => true,
-            'invoice' => $invoice->load(['items', 'payments', 'customer', 'allocation']),
+            'invoice' => $invoice->fresh()->load(['items', 'payments', 'customer', 'allocation']),
         ]);
     }
 
@@ -502,6 +569,8 @@ class POSController extends Controller
             'unit_price' => $unitPrice,
             'total_price' => $unitPrice * $validated['quantity'],
         ]);
+
+        $invoice->calculateTotals();
 
         return response()->json([
             'success' => true,
@@ -732,9 +801,20 @@ class POSController extends Controller
      */
     public function printInvoice(Invoice $invoice)
     {
-        $invoice->load(['items', 'payments', 'customer', 'allocation.bed', 'allocation.package', 'creator']);
+        $invoice->load(['items', 'payments', 'customer', 'allocation.bed', 'allocation.package', 'allocation.advancePayments', 'creator']);
 
-        return view('pos.thermal-receipt', compact('invoice'));
+        // Calculate advance payment totals
+        $advancePayments = [];
+        $totalAdvancePaid = 0;
+        $originalPackagePrice = 0;
+        
+        if ($invoice->allocation) {
+            $advancePayments = $invoice->allocation->advancePayments;
+            $totalAdvancePaid = $advancePayments->sum('amount');
+            $originalPackagePrice = $invoice->allocation->package->price ?? 0;
+        }
+
+        return view('pos.thermal-receipt', compact('invoice', 'advancePayments', 'totalAdvancePaid', 'originalPackagePrice'));
     }
 
     /**
