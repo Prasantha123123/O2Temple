@@ -33,12 +33,22 @@ class MembershipPackage extends Model
         'sessions_used' => 'integer',
     ];
 
+    protected $appends = ['remaining_sessions'];
+
     /**
      * Get the package that this membership is based on
      */
     public function package()
     {
         return $this->belongsTo(Package::class);
+    }
+
+    /**
+     * Get the bed allocations for this membership package
+     */
+    public function allocations()
+    {
+        return $this->hasMany(BedAllocation::class);
     }
 
     /**
