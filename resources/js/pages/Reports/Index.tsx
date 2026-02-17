@@ -20,10 +20,12 @@ interface SalesSummaryItem {
   invoice_number: string;
   customer_name: string;
   customer_phone: string;
+  customer_type: string;
   package_name: string;
   invoice_type: string;
   payment_method: string;
   amount: number;
+  discount_amount: number;
   date: string;
   time: string;
 }
@@ -94,6 +96,11 @@ interface Props {
     year: number;
     month: number;
     day: number | null;
+    customer_type: string;
+    include_cancelled: boolean;
+    include_discounts: boolean;
+    date_from: string | null;
+    date_to: string | null;
   };
 }
 
@@ -110,6 +117,12 @@ const Reports: React.FC<Props> = ({
   const [selectedYear, setSelectedYear] = useState(filters.year);
   const [selectedMonth, setSelectedMonth] = useState(filters.month);
   const [selectedDay, setSelectedDay] = useState(filters.day || null);
+  const [customerType, setCustomerType] = useState(filters.customer_type || 'all');
+  const [includeCancelled, setIncludeCancelled] = useState(filters.include_cancelled);
+  const [includeDiscounts, setIncludeDiscounts] = useState(filters.include_discounts);
+  const [dateFrom, setDateFrom] = useState(filters.date_from || '');
+  const [dateTo, setDateTo] = useState(filters.date_to || '');
+  const [useCustomDateRange, setUseCustomDateRange] = useState(!!(filters.date_from && filters.date_to));
 
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
   const months = [
@@ -128,10 +141,23 @@ const Reports: React.FC<Props> = ({
   ];
 
   const handleFilter = () => {
-    const params = { year: selectedYear, month: selectedMonth } as any;
-    if (selectedDay) {
-      params.day = selectedDay;
+    const params = {
+      customer_type: customerType,
+      include_cancelled: includeCancelled,
+      include_discounts: includeDiscounts,
+    } as any;
+    
+    if (useCustomDateRange && dateFrom && dateTo) {
+      params.date_from = dateFrom;
+      params.date_to = dateTo;
+    } else {
+      params.year = selectedYear;
+      params.month = selectedMonth;
+      if (selectedDay) {
+        params.day = selectedDay;
+      }
     }
+    
     router.get('/reports', params, {
       preserveState: true,
       preserveScroll: true,
@@ -140,11 +166,21 @@ const Reports: React.FC<Props> = ({
 
   const handleExport = (format: 'pdf' | 'excel') => {
     const params = new URLSearchParams();
-    params.set('year', selectedYear.toString());
-    params.set('month', selectedMonth.toString());
-    if (selectedDay) {
-      params.set('day', selectedDay.toString());
+    params.set('customer_type', customerType);
+    params.set('include_cancelled', includeCancelled.toString());
+    params.set('include_discounts', includeDiscounts.toString());
+    
+    if (useCustomDateRange && dateFrom && dateTo) {
+      params.set('date_from', dateFrom);
+      params.set('date_to', dateTo);
+    } else {
+      params.set('year', selectedYear.toString());
+      params.set('month', selectedMonth.toString());
+      if (selectedDay) {
+        params.set('day', selectedDay.toString());
+      }
     }
+    
     params.set('export', format);
     window.location.href = `/reports?${params.toString()}`;
   };
@@ -209,7 +245,7 @@ const Reports: React.FC<Props> = ({
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
@@ -229,75 +265,170 @@ const Reports: React.FC<Props> = ({
 
           {/* Filter Bar */}
           <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Year:</label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
-                >
-                  {years.map((year) => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
+            <div className="space-y-4">
+              {/* Date Range Toggle */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <label className="text-sm font-medium text-gray-700">Date Filter:</label>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="dateFilter"
+                      checked={!useCustomDateRange}
+                      onChange={() => setUseCustomDateRange(false)}
+                      className="text-pink-500 focus:ring-pink-500"
+                    />
+                    <span className="text-sm text-gray-700">Month/Year</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="dateFilter"
+                      checked={useCustomDateRange}
+                      onChange={() => setUseCustomDateRange(true)}
+                      className="text-pink-500 focus:ring-pink-500"
+                    />
+                    <span className="text-sm text-gray-700">Custom Date Range</span>
+                  </label>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Month:</label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
-                >
-                  {months.map((month) => (
-                    <option key={month.value} value={month.value}>{month.label}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Date Controls */}
+              {!useCustomDateRange ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">Year:</label>
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => setSelectedYear(Number(e.target.value))}
+                      className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
+                    >
+                      {years.map((year) => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Day:</label>
-                <select
-                  value={selectedDay || ''}
-                  onChange={(e) => setSelectedDay(e.target.value ? Number(e.target.value) : null)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
-                >
-                  <option value="">All Days</option>
-                  {Array.from({ length: new Date(selectedYear, selectedMonth, 0).getDate() }, (_, i) => (
-                    <option key={i + 1} value={i + 1}>{i + 1}</option>
-                  ))}
-                </select>
-              </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">Month:</label>
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                      className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
+                    >
+                      {months.map((month) => (
+                        <option key={month.value} value={month.value}>{month.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              <Button 
-                onClick={handleFilter}
-                className="bg-pink-500 hover:bg-pink-600 text-white"
-              >
-                Apply Filter
-              </Button>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">Day:</label>
+                    <select
+                      value={selectedDay || ''}
+                      onChange={(e) => setSelectedDay(e.target.value ? Number(e.target.value) : null)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
+                    >
+                      <option value="">All Days</option>
+                      {Array.from({ length: new Date(selectedYear, selectedMonth, 0).getDate() }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>{i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">From:</label>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">To:</label>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
+                    />
+                  </div>
+                </div>
+              )}
 
-              <div className="flex items-center gap-2 ml-auto">
-                <Button 
-                  variant="outline"
-                  onClick={() => handleExport('excel')}
-                  className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
-                >
-                  Export Excel
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => handleExport('pdf')}
-                  className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
-                >
-                  Export PDF
-                </Button>
+              {/* Additional Filters */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">Customer Type:</label>
+                    <select
+                      value={customerType}
+                      onChange={(e) => setCustomerType(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 focus:border-pink-500 focus:ring-pink-500 bg-white text-gray-900"
+                    >
+                      <option value="all">All Customers</option>
+                      <option value="regular">Regular Only</option>
+                      <option value="membership">Membership Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeCancelled}
+                      onChange={(e) => setIncludeCancelled(e.target.checked)}
+                      className="text-pink-500 focus:ring-pink-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Include Cancelled Bookings</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeDiscounts}
+                      onChange={(e) => setIncludeDiscounts(e.target.checked)}
+                      className="text-pink-500 focus:ring-pink-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Include Discounts</span>
+                  </label>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-2">
+                  <Button 
+                    onClick={handleFilter}
+                    className="bg-pink-500 hover:bg-pink-600 text-white w-full sm:w-auto"
+                  >
+                    Apply Filters
+                  </Button>
+
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <Button 
+                      variant="outline"
+                      onClick={() => handleExport('excel')}
+                      className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100 w-full sm:w-auto"
+                    >
+                      Export Excel
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => handleExport('pdf')}
+                      className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 w-full sm:w-auto"
+                    >
+                      Export PDF
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Summary Stats Cards - Row 1 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
               <div className="flex items-center justify-between">
                 <div>
@@ -361,7 +492,7 @@ const Reports: React.FC<Props> = ({
           </div>
 
           {/* Summary Stats Cards - Row 2 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
               <div className="flex items-center justify-between">
                 <div>
@@ -419,48 +550,75 @@ const Reports: React.FC<Props> = ({
           <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">
-                Sales Summary ({selectedDay ? `${months[selectedMonth - 1]?.label} ${selectedDay}, ${selectedYear}` : `${months[selectedMonth - 1]?.label} ${selectedYear}`})
+                Sales Summary ({useCustomDateRange && dateFrom && dateTo ? `${formatDate(dateFrom)} - ${formatDate(dateTo)}` : selectedDay ? `${months[selectedMonth - 1]?.label} ${selectedDay}, ${selectedYear}` : `${months[selectedMonth - 1]?.label} ${selectedYear}`})
               </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                {selectedDay ? 'Daily breakdown of completed sales' : 'Detailed breakdown of all completed sales'}
-              </p>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mt-1 gap-2">
+                <p className="text-sm text-gray-500">
+                  {selectedDay || useCustomDateRange ? 'Daily breakdown of completed sales' : 'Detailed breakdown of all completed sales'}
+                </p>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                  {customerType !== 'all' && (
+                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">Customer: {customerType}</span>
+                  )}
+                  {includeCancelled && (
+                    <span className="px-2 py-1 bg-red-100 text-red-700 rounded">Includes Cancelled</span>
+                  )}
+                  {!includeDiscounts && (
+                    <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded">Excludes Discounts</span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Invoice #</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Package/Service</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Payment</th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Date & Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
+              <div className="min-w-full inline-block align-middle">
+                <table className="w-full min-w-[800px]">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Invoice #</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Customer</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Type</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Package/Service</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Invoice Type</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Payment</th>
+                      <th className="px-3 sm:px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Discount</th>
+                      <th className="px-3 sm:px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Amount</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Date & Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
                   {salesSummary.data.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={9} className="px-3 sm:px-6 py-8 text-center text-gray-500">
                         No sales data available for this period
                       </td>
                     </tr>
                   ) : (
                     salesSummary.data.map((sale) => (
                       <tr key={sale.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
                           <span className="text-sm font-medium text-gray-900">{sale.invoice_number}</span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
                           <div className="text-sm">
                             <div className="font-medium text-gray-900">{sale.customer_name}</div>
-                            <div className="text-gray-500">{sale.customer_phone}</div>
+                            <div className="text-gray-500 hidden sm:block">{sale.customer_phone}</div>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
+                          <Badge
+                            className={`text-xs ${
+                              sale.customer_type === 'Membership' ? 'bg-purple-100 text-purple-800' :
+                              'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            <span className="hidden sm:inline">{sale.customer_type === 'Membership' ? '💎 Member' : '👤 Regular'}</span>
+                            <span className="sm:hidden">{sale.customer_type === 'Membership' ? '💎' : '👤'}</span>
+                          </Badge>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4">
                           <span className="text-sm text-gray-900">{sale.package_name}</span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
                           <Badge
                             variant={sale.invoice_type === 'Booking' ? 'default' : 'secondary'}
                             className={`text-xs ${
@@ -470,10 +628,11 @@ const Reports: React.FC<Props> = ({
                               'bg-gray-100 text-gray-800'
                             }`}
                           >
-                            {sale.invoice_type}
+                            <span className="hidden sm:inline">{sale.invoice_type}</span>
+                            <span className="sm:hidden">{sale.invoice_type.slice(0, 3)}</span>
                           </Badge>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
                           <Badge
                             variant="outline"
                             className={`text-xs ${
@@ -482,16 +641,24 @@ const Reports: React.FC<Props> = ({
                               'bg-gray-50 text-gray-700 border-gray-200'
                             }`}
                           >
-                            {sale.payment_method}
+                            <span className="hidden sm:inline">{sale.payment_method}</span>
+                            <span className="sm:hidden">{sale.payment_method.slice(0, 4)}</span>
                           </Badge>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-3 sm:px-6 py-4 text-right">
+                          <span className={`text-sm font-medium ${
+                            sale.discount_amount > 0 ? 'text-orange-600' : 'text-gray-400'
+                          }`}>
+                            {sale.discount_amount > 0 ? `- ${formatCurrency(sale.discount_amount)}` : '-'}
+                          </span>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 text-right">
                           <span className="text-sm font-semibold text-green-600">{formatCurrency(sale.amount)}</span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
                           <div className="text-sm text-gray-900">
                             <div>{formatDate(sale.date)}</div>
-                            <div className="text-gray-500">{sale.time}</div>
+                            <div className="text-gray-500 hidden sm:block">{sale.time}</div>
                           </div>
                         </td>
                       </tr>
@@ -501,25 +668,26 @@ const Reports: React.FC<Props> = ({
                 {salesSummary.data.length > 0 && (
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <td colSpan={5} className="px-6 py-3 font-bold text-gray-900">Total ({salesSummary.total} sales)</td>
-                      <td className="px-6 py-3 text-right font-bold text-green-600">
+                      <td colSpan={7} className="px-3 sm:px-6 py-3 font-bold text-gray-900">Total ({salesSummary.total} sales)</td>
+                      <td className="px-3 sm:px-6 py-3 text-right font-bold text-green-600">
                         {formatCurrency(salesSummary.data.reduce((sum, sale) => sum + sale.amount, 0))}
                       </td>
-                      <td className="px-6 py-3"></td>
+                      <td className="px-3 sm:px-6 py-3"></td>
                     </tr>
                   </tfoot>
                 )}
               </table>
+              </div>
             </div>
             
             {/* Pagination */}
             {salesSummary.last_page > 1 && (
-              <div className="px-6 py-4 border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-500">
+              <div className="px-3 sm:px-6 py-4 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="text-sm text-gray-500 text-center sm:text-left">
                     Showing {((salesSummary.current_page - 1) * salesSummary.per_page) + 1} to {Math.min(salesSummary.current_page * salesSummary.per_page, salesSummary.total)} of {salesSummary.total} results
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -554,10 +722,10 @@ const Reports: React.FC<Props> = ({
           </div>
 
           {/* Additional Tables */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
             {/* Revenue by Type */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">Revenue by Type</h3>
                 <p className="text-xs text-gray-500">{months[selectedMonth - 1]?.label} {selectedYear}</p>
               </div>
@@ -568,11 +736,11 @@ const Reports: React.FC<Props> = ({
                   <div className="space-y-3">
                     {revenueByType.map((item) => (
                       <div key={item.invoice_type} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <p className="font-medium text-gray-900">{getInvoiceTypeLabel(item.invoice_type)}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 truncate">{getInvoiceTypeLabel(item.invoice_type)}</p>
                           <p className="text-xs text-gray-500">{item.invoice_count} invoices</p>
                         </div>
-                        <span className="font-semibold text-green-600">{formatCurrency(item.revenue)}</span>
+                        <span className="font-semibold text-green-600 text-sm">{formatCurrency(item.revenue)}</span>
                       </div>
                     ))}
                   </div>
@@ -582,7 +750,7 @@ const Reports: React.FC<Props> = ({
 
             {/* Top Packages */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">Top Packages</h3>
                 <p className="text-xs text-gray-500">{months[selectedMonth - 1]?.label} {selectedYear}</p>
               </div>
@@ -593,16 +761,16 @@ const Reports: React.FC<Props> = ({
                   <div className="space-y-3">
                     {topPackages.map((pkg, index) => (
                       <div key={pkg.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <span className="w-6 h-6 rounded-full bg-pink-500 text-white text-xs flex items-center justify-center font-bold">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="w-6 h-6 rounded-full bg-pink-500 text-white text-xs flex items-center justify-center font-bold flex-shrink-0">
                             {index + 1}
                           </span>
-                          <div>
-                            <p className="font-medium text-gray-900">{pkg.name}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-gray-900 truncate">{pkg.name}</p>
                             <p className="text-xs text-gray-500">{formatCurrency(pkg.price)}</p>
                           </div>
                         </div>
-                        <Badge className="bg-blue-100 text-blue-700">{pkg.allocations_count} bookings</Badge>
+                        <Badge className="bg-blue-100 text-blue-700 text-xs">{pkg.allocations_count}</Badge>
                       </div>
                     ))}
                   </div>
@@ -612,7 +780,7 @@ const Reports: React.FC<Props> = ({
 
             {/* Top Customers */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">Top Customers</h3>
                 <p className="text-xs text-gray-500">{months[selectedMonth - 1]?.label} {selectedYear}</p>
               </div>
@@ -623,16 +791,16 @@ const Reports: React.FC<Props> = ({
                   <div className="space-y-3">
                     {topCustomers.map((customer, index) => (
                       <div key={customer.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <span className="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-bold">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-bold flex-shrink-0">
                             {index + 1}
                           </span>
-                          <div>
-                            <p className="font-medium text-gray-900">{customer.name}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-gray-900 truncate">{customer.name}</p>
                             <p className="text-xs text-gray-500">{customer.invoices_count} invoices</p>
                           </div>
                         </div>
-                        <span className="font-semibold text-green-600">
+                        <span className="font-semibold text-green-600 text-sm">
                           {formatCurrency(customer.invoices_sum_total_amount || 0)}
                         </span>
                       </div>
@@ -647,7 +815,7 @@ const Reports: React.FC<Props> = ({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Booking Status Summary */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">Booking Status Summary</h3>
                 <p className="text-xs text-gray-500">{months[selectedMonth - 1]?.label} {selectedYear}</p>
               </div>
@@ -655,7 +823,7 @@ const Reports: React.FC<Props> = ({
                 {bookingStatusSummary.length === 0 ? (
                   <p className="text-center text-gray-500 py-4">No bookings this month</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {bookingStatusSummary.map((item) => (
                       <div key={item.status} className="p-4 bg-gray-50 rounded-lg text-center">
                         <Badge className={`${getStatusBadgeClass(item.status)} mb-2`}>
@@ -671,7 +839,7 @@ const Reports: React.FC<Props> = ({
 
             {/* Payment Status Summary */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">Payment Status Summary</h3>
                 <p className="text-xs text-gray-500">{months[selectedMonth - 1]?.label} {selectedYear}</p>
               </div>
@@ -679,7 +847,7 @@ const Reports: React.FC<Props> = ({
                 {paymentStatusSummary.length === 0 ? (
                   <p className="text-center text-gray-500 py-4">No payments this month</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {paymentStatusSummary.map((item) => (
                       <div key={item.payment_status} className="p-4 bg-gray-50 rounded-lg text-center">
                         <Badge className={`${getPaymentStatusBadgeClass(item.payment_status)} mb-2`}>
